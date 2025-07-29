@@ -1,3 +1,5 @@
+import { UnsplashService } from './UnsplashService';
+
 export interface AIModel {
   id: string;
   name: string;
@@ -147,7 +149,7 @@ export class AIService {
       throw new Error('No content generated from Gemini');
     }
 
-    return this.parseGeneratedContent(content);
+    return await this.enhanceWithImages(content, request);
   }
 
   private static async generateWithOpenAI(request: GenerationRequest, apiKey: string): Promise<GenerationResponse> {
@@ -177,6 +179,12 @@ SCREENSHOT ANALYSIS INSTRUCTIONS:
 - Identify interactive elements (buttons, forms, navigation)
 ` : ''}
 
+IMAGE INTEGRATION INSTRUCTIONS:
+- Use placeholder image markers like [IMAGE:hero], [IMAGE:about], [IMAGE:gallery] in your HTML
+- Place these markers where images should appear
+- Common sections that need images: hero, about, services, gallery, team, testimonials
+- Use semantic class names for image containers
+
 GENERATION REQUIREMENTS:
 - Use modern HTML5, CSS3, and vanilla JavaScript
 - Create responsive design that works on all devices
@@ -184,6 +192,7 @@ GENERATION REQUIREMENTS:
 - Implement clean, maintainable code structure
 - Add proper accessibility features
 - Include modern CSS features (Grid, Flexbox, CSS Variables)
+- Add image placeholders with [IMAGE:section_name] format
 ${isMultiPage ? '- Create navigation between pages\n- Generate separate HTML files for each page' : ''}
 
 OUTPUT FORMAT:
@@ -210,6 +219,70 @@ Return your response in the following JSON structure:
 }
 
 IMPORTANT: Return ONLY the JSON response, no additional text or explanations.`;
+  }
+
+  private static async enhanceWithImages(content: string, request: GenerationRequest): Promise<GenerationResponse> {
+    try {
+      const response = this.parseGeneratedContent(content);
+      
+      if (!response.success) {
+        return response;
+      }
+
+      // Extract sections that need images from the HTML content
+      const htmlFiles = response.files.filter(f => f.type === 'html');
+      const sectionsNeeded: string[] = [];
+      
+      htmlFiles.forEach(file => {
+        const imageMatches = file.content.match(/\[IMAGE:(\w+)\]/g);
+        if (imageMatches) {
+          imageMatches.forEach(match => {
+            const section = match.replace(/\[IMAGE:|\]/g, '');
+            if (!sectionsNeeded.includes(section)) {
+              sectionsNeeded.push(section);
+            }
+          });
+        }
+      });
+
+      // Get contextual images if any sections need them
+      if (sectionsNeeded.length > 0) {
+        const imageMap = await UnsplashService.getContextualImages(request.prompt, sectionsNeeded);
+        
+        // Replace image placeholders with actual images
+        response.files = response.files.map(file => {
+          if (file.type === 'html') {
+            let updatedContent = file.content;
+            
+            sectionsNeeded.forEach(section => {
+              const images = imageMap[section];
+              if (images && images.length > 0) {
+                const image = images[0];
+                const imageHtml = UnsplashService.getImageMarkup(
+                  image,
+                  `${section} section image`,
+                  'w-full h-auto object-cover'
+                );
+                
+                updatedContent = updatedContent.replace(
+                  `[IMAGE:${section}]`,
+                  imageHtml
+                );
+              }
+            });
+            
+            return { ...file, content: updatedContent };
+          }
+          return file;
+        });
+      }
+
+      return response;
+    } catch (error) {
+      console.error('Error enhancing with images:', error);
+      // Return original response if image enhancement fails
+      return this.parseGeneratedContent(content);
+    }
   }
 
   private static async fileToBase64(file: File): Promise<string> {
