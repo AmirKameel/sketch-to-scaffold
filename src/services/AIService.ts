@@ -192,7 +192,7 @@ export class AIService {
     const isScreenshot = !!request.image;
     const isMultiPage = request.projectType === 'multi-page';
 
-    return `You are an expert web developer. ${isScreenshot ? 'Analyze the provided screenshot and' : ''} create a ${isMultiPage ? 'multi-page website' : 'single-page website'} based on the following requirements:
+    return `You are an expert web developer and UI/UX designer. ${isScreenshot ? 'Analyze the provided screenshot and' : ''} create a ${isMultiPage ? 'professional multi-page website' : 'stunning single-page landing page'} based on the following requirements:
 
 ${request.prompt}
 
@@ -205,23 +205,93 @@ SCREENSHOT ANALYSIS INSTRUCTIONS:
 - Identify interactive elements (buttons, forms, navigation)
 ` : ''}
 
-IMAGE INTEGRATION INSTRUCTIONS:
-- Use placeholder image markers like [IMAGE:hero], [IMAGE:about], [IMAGE:gallery1], [IMAGE:gallery2] in your HTML
-- Place these markers where images should appear in logical sections
-- Common sections: hero, about, services, gallery, team, testimonials, features, portfolio, contact, background
-- For multiple images in same section, use numbered variants: [IMAGE:gallery1], [IMAGE:gallery2], [IMAGE:service1], [IMAGE:service2]
-- Use semantic class names for image containers with proper sizing classes
-- Consider the content context when placing image markers
+${!isMultiPage ? `
+SINGLE-PAGE LANDING PAGE STRUCTURE (MANDATORY):
+Create a professional landing page with these exact sections in order:
 
-GENERATION REQUIREMENTS:
-- Use modern HTML5, CSS3, and vanilla JavaScript
-- Create responsive design that works on all devices
-- Use semantic HTML elements
-- Implement clean, maintainable code structure
-- Add proper accessibility features
-- Include modern CSS features (Grid, Flexbox, CSS Variables)
-- Add image placeholders with [IMAGE:section_name] format
-${isMultiPage ? '- Create navigation between pages\n- Generate separate HTML files for each page' : ''}
+1. HEADER SECTION:
+   - Fixed/sticky navigation bar with logo and menu items
+   - Clean, modern design with smooth scrolling navigation
+   - Mobile hamburger menu for responsive design
+
+2. HERO SECTION:
+   - Full-screen height with background image [IMAGE:hero]
+   - Compelling headline and subheadline
+   - Call-to-action button
+   - Modern overlay effects and typography
+
+3. ABOUT SECTION:
+   - Two-column layout: image [IMAGE:about] on left, content on right
+   - Company/service description with engaging copy
+   - Professional styling with proper spacing
+
+4. SERVICES/FEATURES SECTION:
+   - Grid layout with service cards (3-4 items)
+   - Each card: image [IMAGE:service1], [IMAGE:service2], [IMAGE:service3], title, description
+   - Hover effects and modern card design
+   - Icons or images for each service
+
+5. TESTIMONIALS/REVIEWS SECTION:
+   - Customer testimonials or reviews
+   - Profile images [IMAGE:testimonial1], [IMAGE:testimonial2] 
+   - Star ratings and quote styling
+   - Carousel or grid layout
+
+6. GALLERY/PORTFOLIO SECTION (if relevant):
+   - Image gallery [IMAGE:gallery1], [IMAGE:gallery2], [IMAGE:gallery3], [IMAGE:gallery4]
+   - Masonry or grid layout with hover effects
+   - Lightbox functionality
+
+7. CONTACT SECTION:
+   - Contact form with validation
+   - Company information and location
+   - Background image [IMAGE:contact] or map integration
+
+8. FOOTER:
+   - Company info, links, social media
+   - Copyright and additional navigation
+   - Clean, organized layout
+
+DESIGN REQUIREMENTS:
+- Use modern CSS Grid and Flexbox for layouts
+- Implement smooth scrolling and scroll-triggered animations
+- Add CSS transitions and hover effects throughout
+- Use CSS variables for consistent theming
+- Implement parallax effects for background images
+- Add loading animations and micro-interactions
+- Use box-shadows, gradients, and modern visual effects
+- Ensure perfect responsive design for all screen sizes
+` : ''}
+
+IMAGE INTEGRATION INSTRUCTIONS:
+- Use placeholder image markers in format [IMAGE:section_name]
+- For hero sections: [IMAGE:hero] for main background
+- For about sections: [IMAGE:about] for company/team images  
+- For services: [IMAGE:service1], [IMAGE:service2], [IMAGE:service3], etc.
+- For testimonials: [IMAGE:testimonial1], [IMAGE:testimonial2], etc.
+- For gallery/portfolio: [IMAGE:gallery1], [IMAGE:gallery2], [IMAGE:gallery3], etc.
+- For contact: [IMAGE:contact] for background or team images
+- Size images appropriately with CSS classes and proper aspect ratios
+
+ADVANCED STYLING REQUIREMENTS:
+- Implement CSS animations (fade-in, slide-up, etc.)
+- Use modern color schemes with gradients and shadows
+- Add particle effects or subtle background animations
+- Implement smooth scrolling and section reveal animations
+- Use advanced typography with multiple font weights
+- Add CSS transforms for interactive elements
+- Implement modern button designs with hover states
+- Use CSS backdrop-filter for modern glass effects
+
+TECHNICAL REQUIREMENTS:
+- Use semantic HTML5 elements (header, nav, main, section, article, footer)
+- Implement proper accessibility (ARIA labels, alt texts, keyboard navigation)
+- Add meta tags for SEO optimization
+- Include responsive breakpoints for mobile, tablet, desktop
+- Use modern CSS features (CSS Grid, Flexbox, CSS Variables, calc())
+- Add smooth JavaScript interactions without heavy frameworks
+- Implement form validation and interactive elements
+- Ensure fast loading and optimized performance
 
 OUTPUT FORMAT:
 Return your response in the following JSON structure:
@@ -234,17 +304,19 @@ Return your response in the following JSON structure:
     },
     {
       "path": "styles.css", 
-      "content": "/* CSS content */",
+      "content": "/* Advanced CSS with animations and modern design */",
       "type": "css"
     },
     {
       "path": "script.js",
-      "content": "// JavaScript content",
+      "content": "// Interactive JavaScript for animations and functionality",
       "type": "js"
     }
   ],
-  "pages": ["index.html", "about.html", "contact.html"]
+  "pages": ["index.html"]
 }
+
+CRITICAL: Create visually stunning, modern websites that look professional and engaging. Use the latest web design trends, smooth animations, and beautiful visual effects. Every section should be carefully crafted with attention to spacing, typography, and visual hierarchy.
 
 IMPORTANT: Return ONLY the JSON response, no additional text or explanations.`;
   }
