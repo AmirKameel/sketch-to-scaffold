@@ -130,32 +130,52 @@ export class AIService {
       });
     }
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${request.model.id}:generateContent?key=${apiKey}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body)
-    });
+    // Retry logic for API overload
+    let lastError;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${request.model.id}:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body)
+        });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Gemini API Error Details:', {
-        status: response.status,
-        statusText: response.statusText,
-        error: errorText
-      });
-      throw new Error(`Gemini API error: ${response.statusText} - ${errorText}`);
+        if (!response.ok) {
+          const errorText = await response.text();
+          const errorData = JSON.parse(errorText);
+          
+          // If overloaded (503), wait and retry
+          if (response.status === 503) {
+            console.log(`Gemini API overloaded, attempt ${attempt}/3. Retrying in ${attempt * 2} seconds...`);
+            if (attempt < 3) {
+              await new Promise(resolve => setTimeout(resolve, attempt * 2000));
+              continue;
+            }
+          }
+          
+          throw new Error(`Gemini API error (${response.status}): ${errorData.error?.message || response.statusText}`);
+        }
+
+        const data = await response.json();
+        const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        
+        if (!content) {
+          throw new Error('No content generated from Gemini');
+        }
+
+        return await this.enhanceWithImages(content, request);
+        
+      } catch (error) {
+        lastError = error;
+        if (attempt === 3) {
+          throw error;
+        }
+      }
     }
-
-    const data = await response.json();
-    const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
     
-    if (!content) {
-      throw new Error('No content generated from Gemini');
-    }
-
-    return await this.enhanceWithImages(content, request);
+    throw lastError;
   }
 
   private static async generateWithOpenAI(request: GenerationRequest, apiKey: string): Promise<GenerationResponse> {
