@@ -139,7 +139,13 @@ export class AIService {
     });
 
     if (!response.ok) {
-      throw new Error(`Gemini API error: ${response.statusText}`);
+      const errorText = await response.text();
+      console.error('Gemini API Error Details:', {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorText
+      });
+      throw new Error(`Gemini API error: ${response.statusText} - ${errorText}`);
     }
 
     const data = await response.json();
