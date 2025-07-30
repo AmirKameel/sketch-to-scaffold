@@ -206,10 +206,12 @@ SCREENSHOT ANALYSIS INSTRUCTIONS:
 ` : ''}
 
 IMAGE INTEGRATION INSTRUCTIONS:
-- Use placeholder image markers like [IMAGE:hero], [IMAGE:about], [IMAGE:gallery] in your HTML
-- Place these markers where images should appear
-- Common sections that need images: hero, about, services, gallery, team, testimonials
-- Use semantic class names for image containers
+- Use placeholder image markers like [IMAGE:hero], [IMAGE:about], [IMAGE:gallery1], [IMAGE:gallery2] in your HTML
+- Place these markers where images should appear in logical sections
+- Common sections: hero, about, services, gallery, team, testimonials, features, portfolio, contact, background
+- For multiple images in same section, use numbered variants: [IMAGE:gallery1], [IMAGE:gallery2], [IMAGE:service1], [IMAGE:service2]
+- Use semantic class names for image containers with proper sizing classes
+- Consider the content context when placing image markers
 
 GENERATION REQUIREMENTS:
 - Use modern HTML5, CSS3, and vanilla JavaScript
@@ -257,43 +259,56 @@ IMPORTANT: Return ONLY the JSON response, no additional text or explanations.`;
 
       // Extract sections that need images from the HTML content
       const htmlFiles = response.files.filter(f => f.type === 'html');
-      const sectionsNeeded: string[] = [];
+      const sectionsMap: Record<string, string[]> = {};
       
       htmlFiles.forEach(file => {
-        const imageMatches = file.content.match(/\[IMAGE:(\w+)\]/g);
+        const imageMatches = file.content.match(/\[IMAGE:(\w+\d*)\]/g);
         if (imageMatches) {
           imageMatches.forEach(match => {
-            const section = match.replace(/\[IMAGE:|\]/g, '');
-            if (!sectionsNeeded.includes(section)) {
-              sectionsNeeded.push(section);
+            const fullSection = match.replace(/\[IMAGE:|\]/g, '');
+            // Extract base section name (e.g., 'gallery' from 'gallery1')
+            const baseSection = fullSection.replace(/\d+$/, '');
+            
+            if (!sectionsMap[baseSection]) {
+              sectionsMap[baseSection] = [];
+            }
+            if (!sectionsMap[baseSection].includes(fullSection)) {
+              sectionsMap[baseSection].push(fullSection);
             }
           });
         }
       });
 
       // Get contextual images if any sections need them
-      if (sectionsNeeded.length > 0) {
-        const imageMap = await UnsplashService.getContextualImages(request.prompt, sectionsNeeded);
+      if (Object.keys(sectionsMap).length > 0) {
+        const baseSections = Object.keys(sectionsMap);
+        const imageMap = await UnsplashService.getContextualImages(request.prompt, baseSections);
         
         // Replace image placeholders with actual images
         response.files = response.files.map(file => {
           if (file.type === 'html') {
             let updatedContent = file.content;
             
-            sectionsNeeded.forEach(section => {
-              const images = imageMap[section];
+            // Process each base section and its variants
+            Object.entries(sectionsMap).forEach(([baseSection, variants]) => {
+              const images = imageMap[baseSection];
               if (images && images.length > 0) {
-                const image = images[0];
-                const imageHtml = UnsplashService.getImageMarkup(
-                  image,
-                  `${section} section image`,
-                  'w-full h-auto object-cover'
-                );
-                
-                updatedContent = updatedContent.replace(
-                  `[IMAGE:${section}]`,
-                  imageHtml
-                );
+                variants.forEach((variant, index) => {
+                  // Use different images for variants, or cycle through available images
+                  const imageIndex = index % images.length;
+                  const image = images[imageIndex];
+                  
+                  const imageHtml = UnsplashService.getImageMarkup(
+                    image,
+                    `${variant} image`,
+                    'w-full h-auto object-cover'
+                  );
+                  
+                  updatedContent = updatedContent.replace(
+                    `[IMAGE:${variant}]`,
+                    imageHtml
+                  );
+                });
               }
             });
             

@@ -73,33 +73,64 @@ export class UnsplashService {
   }
 
   static async getContextualImages(websiteContent: string, sectionsNeeded: string[]): Promise<Record<string, UnsplashImage[]>> {
-    const imageMap: Record<string, UnsplashImage[]> = {};
+    const result: Record<string, UnsplashImage[]> = {};
     
-    // Enhanced content analysis with keyword extraction
-    const contentLower = websiteContent.toLowerCase();
+    // Extract context from the website content
     const keywords = this.extractKeywords(websiteContent);
-    const businessType = this.detectBusinessType(contentLower, keywords);
-    const tone = this.detectTone(contentLower);
+    const businessType = this.detectBusinessType(websiteContent.toLowerCase(), keywords);
+    const tone = this.detectTone(websiteContent.toLowerCase());
     
-    console.log('Detected business type:', businessType);
-    console.log('Extracted keywords:', keywords);
-    console.log('Detected tone:', tone);
-
-    // Get images for each section with enhanced context
+    console.log('Contextual analysis:', { keywords, businessType, tone });
+    
     for (const section of sectionsNeeded) {
       try {
-        const query = this.buildSmartQuery(section, businessType, keywords, tone, contentLower);
-        console.log(`Query for ${section}:`, query);
+        const sectionContext = this.extractSectionContext(section, websiteContent);
+        const query = this.buildSmartQuery(section, keywords, businessType, tone, sectionContext);
         
-        const images = await this.searchImages(query, 3);
-        imageMap[section] = images;
+        console.log(`Fetching images for section "${section}" with query: "${query}"`);
+        
+        // Get more images per section for variety (5-8 depending on section)
+        const imageCount = this.getImageCountForSection(section);
+        const images = await this.searchImages(query, imageCount);
+        
+        if (images.length === 0) {
+          // Try alternative queries before falling back to categories
+          const alternativeQueries = this.generateAlternativeQueries(section, businessType, keywords);
+          let foundImages: UnsplashImage[] = [];
+          
+          for (const altQuery of alternativeQueries) {
+            try {
+              foundImages = await this.searchImages(altQuery, imageCount);
+              if (foundImages.length > 0) break;
+            } catch (e) {
+              continue;
+            }
+          }
+          
+          if (foundImages.length === 0) {
+            // Final fallback to category-based search
+            const fallbackImages = await this.getImagesByCategory(section, imageCount);
+            result[section] = fallbackImages;
+          } else {
+            result[section] = foundImages;
+          }
+        } else {
+          result[section] = images;
+        }
       } catch (error) {
-        console.error(`Error fetching images for section ${section}:`, error);
-        imageMap[section] = [];
+        console.error(`Failed to get images for section ${section}:`, error);
+        // Try a simple fallback
+        try {
+          const fallbackImages = await this.getImagesByCategory(section, this.getImageCountForSection(section));
+          result[section] = fallbackImages;
+        } catch (fallbackError) {
+          console.error(`Fallback also failed for section ${section}:`, fallbackError);
+          result[section] = [];
+        }
       }
     }
-
-    return imageMap;
+    
+    return result;
   }
 
   private static extractKeywords(content: string): string[] {
@@ -170,10 +201,44 @@ export class UnsplashService {
     return 'clean';
   }
 
-  private static buildSmartQuery(section: string, businessType: string, keywords: string[], tone: string, fullContent: string): string {
-    // Extract section-specific context from the full content
-    const sectionContext = this.extractSectionContext(section, fullContent);
+  private static getImageCountForSection(section: string): number {
+    // Return appropriate number of images based on section type
+    const highImageSections = ['gallery', 'portfolio', 'testimonials', 'team', 'products'];
+    const mediumImageSections = ['services', 'features', 'about'];
     
+    if (highImageSections.some(s => section.toLowerCase().includes(s))) {
+      return 8;
+    } else if (mediumImageSections.some(s => section.toLowerCase().includes(s))) {
+      return 5;
+    }
+    return 3; // hero, contact, etc.
+  }
+
+  private static generateAlternativeQueries(section: string, businessType: string, keywords: string[]): string[] {
+    const queries: string[] = [];
+    
+    // Generic section-based queries
+    if (section.includes('hero')) {
+      queries.push(`${businessType} banner`, `professional ${businessType}`, keywords.slice(0, 2).join(' '));
+    } else if (section.includes('about')) {
+      queries.push(`${businessType} team`, `professional workspace`, `office environment`);
+    } else if (section.includes('service')) {
+      queries.push(`${businessType} work`, `professional service`, keywords[0] || businessType);
+    } else if (section.includes('gallery') || section.includes('portfolio')) {
+      queries.push(`${businessType} showcase`, `professional work`, `${businessType} examples`);
+    } else if (section.includes('team')) {
+      queries.push(`professional team`, `business people`, `workplace collaboration`);
+    } else if (section.includes('testimonial')) {
+      queries.push(`happy customers`, `business success`, `professional meeting`);
+    }
+    
+    // Add fallback queries
+    queries.push(businessType, keywords[0] || 'business', 'professional');
+    
+    return queries.filter(q => q && q.length > 0);
+  }
+
+  private static buildSmartQuery(section: string, keywords: string[], businessType: string, tone: string, sectionContext: string): string {
     // Build a highly specific query
     let query = '';
     
@@ -212,29 +277,10 @@ export class UnsplashService {
   }
 
   private static extractSectionContext(section: string, content: string): string {
-    const lines = content.split('\n');
-    let sectionContext = '';
-    
-    // Look for lines that mention the section name and extract surrounding context
-    lines.forEach((line, index) => {
-      if (line.toLowerCase().includes(section)) {
-        // Get context from the line and nearby lines
-        const contextLines = lines.slice(Math.max(0, index - 1), index + 2);
-        const context = contextLines.join(' ').toLowerCase();
-        
-        // Extract meaningful words from context
-        const words = context.split(/\s+/).filter(word => 
-          word.length > 3 && 
-          !['this', 'that', 'with', 'have', 'will', 'from', 'section'].includes(word)
-        );
-        
-        if (words.length > 0) {
-          sectionContext = words.slice(0, 3).join(' ');
-        }
-      }
-    });
-    
-    return sectionContext;
+    // Look for content related to the specific section
+    const sectionRegex = new RegExp(`${section}[^.!?]*[.!?]`, 'gi');
+    const matches = content.match(sectionRegex);
+    return matches ? matches.join(' ') : '';
   }
 
   static getImageMarkup(image: UnsplashImage, alt: string = '', className: string = ''): string {
