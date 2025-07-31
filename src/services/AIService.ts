@@ -451,26 +451,37 @@ IMPORTANT: Return ONLY the JSON response, no additional text or explanations.`;
 
   private static parseGeneratedContent(content: string): GenerationResponse {
     try {
-      // Extract JSON from the response (remove any markdown formatting)
-      let jsonMatch = content.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/) || content.match(/(\{[\s\S]*\})/);
-      if (!jsonMatch) {
-        throw new Error('No valid JSON found in response');
+      // First, try to extract JSON from markdown code blocks
+      let jsonStr = this.extractJsonFromContent(content);
+      
+      if (!jsonStr) {
+        throw new Error('No valid JSON structure found in response');
       }
 
-      let jsonStr = jsonMatch[1];
-      
-      // Try to fix common JSON issues
-      jsonStr = this.sanitizeJsonString(jsonStr);
-      
       let parsed;
-      try {
-        parsed = JSON.parse(jsonStr);
-      } catch (parseError) {
-        console.error('Initial JSON parse failed, attempting to fix...', parseError);
-        
-        // Try to fix unescaped quotes in content
-        jsonStr = this.fixJsonQuotes(jsonStr);
-        parsed = JSON.parse(jsonStr);
+      
+      // Try progressive fixing strategies
+      const strategies = [
+        () => JSON.parse(jsonStr), // Try as-is first
+        () => JSON.parse(this.sanitizeJsonString(jsonStr)), // Basic sanitization
+        () => JSON.parse(this.fixContentFields(jsonStr)), // Fix content fields specifically
+        () => this.parseWithRegex(content) // Fallback to regex extraction
+      ];
+
+      for (const strategy of strategies) {
+        try {
+          parsed = strategy();
+          if (parsed && parsed.files) {
+            break;
+          }
+        } catch (error) {
+          console.log('Strategy failed:', error.message);
+          continue;
+        }
+      }
+
+      if (!parsed || !parsed.files) {
+        throw new Error('Could not parse valid file structure from response');
       }
 
       return {
@@ -481,7 +492,7 @@ IMPORTANT: Return ONLY the JSON response, no additional text or explanations.`;
     } catch (error) {
       console.error('Error parsing generated content:', error);
       console.log('Content length:', content.length);
-      console.log('Content preview:', content.substring(0, 500));
+      console.log('Content preview:', content.substring(0, 1000));
       
       return {
         success: false,
@@ -491,11 +502,28 @@ IMPORTANT: Return ONLY the JSON response, no additional text or explanations.`;
     }
   }
 
+  private static extractJsonFromContent(content: string): string | null {
+    // Try different patterns to extract JSON
+    const patterns = [
+      /```(?:json)?\s*(\{[\s\S]*\})\s*```/i,
+      /(\{[\s\S]*"files"[\s\S]*\})/i,
+      /(\{[\s\S]*\})/
+    ];
+
+    for (const pattern of patterns) {
+      const match = content.match(pattern);
+      if (match) {
+        return match[1];
+      }
+    }
+    
+    return null;
+  }
+
   private static sanitizeJsonString(jsonStr: string): string {
-    // Remove any leading/trailing whitespace
+    // Remove any leading/trailing whitespace and ensure proper braces
     jsonStr = jsonStr.trim();
     
-    // Ensure it starts and ends with braces
     if (!jsonStr.startsWith('{')) {
       const openBrace = jsonStr.indexOf('{');
       if (openBrace !== -1) {
@@ -513,43 +541,122 @@ IMPORTANT: Return ONLY the JSON response, no additional text or explanations.`;
     return jsonStr;
   }
 
-  private static fixJsonQuotes(jsonStr: string): string {
+  private static fixContentFields(jsonStr: string): string {
     try {
-      // Split by content sections to fix quotes within file content
+      // More sophisticated content field fixing
       const lines = jsonStr.split('\n');
-      let inContent = false;
-      let contentIndentLevel = 0;
+      let result = [];
+      let inContentField = false;
+      let contentBuffer = [];
+      let braceLevel = 0;
       
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         
-        // Detect start of content field
+        // Track brace levels for proper JSON structure
+        for (const char of line) {
+          if (char === '{') braceLevel++;
+          if (char === '}') braceLevel--;
+        }
+        
+        // Detect content field start
         if (line.includes('"content":')) {
-          inContent = true;
-          contentIndentLevel = line.search(/\S/);
+          inContentField = true;
+          contentBuffer = [line];
           continue;
         }
         
-        // Detect end of content field (next field at same or lower indent level)
-        if (inContent) {
-          const currentIndent = line.search(/\S/);
-          if (currentIndent !== -1 && currentIndent <= contentIndentLevel && 
-              (line.includes('"type":') || line.includes('"path":') || line.includes('}'))) {
-            inContent = false;
-            continue;
+        if (inContentField) {
+          // Check if we've reached the end of content field
+          if ((line.includes('"type":') || line.includes('"path":') || line.trim() === '}') && 
+              !line.trim().startsWith('//') && !line.trim().startsWith('*')) {
+            
+            // Process accumulated content
+            const contentStr = contentBuffer.join('\n');
+            const fixedContent = this.escapeContentString(contentStr);
+            result.push(fixedContent);
+            
+            inContentField = false;
+            contentBuffer = [];
+            result.push(line);
+          } else {
+            contentBuffer.push(line);
           }
-          
-          // Fix quotes within content
-          if (line.includes('"') && !line.trim().startsWith('"') && !line.trim().endsWith('",')) {
-            lines[i] = line.replace(/"/g, '\\"');
-          }
+        } else {
+          result.push(line);
         }
       }
       
-      return lines.join('\n');
+      // Handle any remaining content buffer
+      if (contentBuffer.length > 0) {
+        const contentStr = contentBuffer.join('\n');
+        const fixedContent = this.escapeContentString(contentStr);
+        result.push(fixedContent);
+      }
+      
+      return result.join('\n');
     } catch (error) {
-      console.error('Error fixing JSON quotes:', error);
+      console.error('Error fixing content fields:', error);
       return jsonStr;
     }
+  }
+
+  private static escapeContentString(contentStr: string): string {
+    // Extract the actual content value
+    const match = contentStr.match(/"content":\s*"([\s\S]*)"$/);
+    if (!match) return contentStr;
+    
+    let content = match[1];
+    
+    // Escape quotes and other special characters
+    content = content
+      .replace(/\\/g, '\\\\')  // Escape backslashes first
+      .replace(/"/g, '\\"')    // Escape quotes
+      .replace(/\r?\n/g, '\\n') // Escape newlines
+      .replace(/\t/g, '\\t');   // Escape tabs
+    
+    return `"content": "${content}"`;
+  }
+
+  private static parseWithRegex(content: string): any {
+    // Fallback: try to extract files using regex patterns
+    console.log('Using regex fallback parser...');
+    
+    const files = [];
+    
+    // Extract HTML file
+    const htmlMatch = content.match(/"path":\s*"index\.html"[\s\S]*?"content":\s*"([\s\S]*?)"[\s\S]*?"type":\s*"html"/);
+    if (htmlMatch) {
+      files.push({
+        path: 'index.html',
+        content: htmlMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"'),
+        type: 'html'
+      });
+    }
+    
+    // Extract CSS file
+    const cssMatch = content.match(/"path":\s*"styles\.css"[\s\S]*?"content":\s*"([\s\S]*?)"[\s\S]*?"type":\s*"css"/);
+    if (cssMatch) {
+      files.push({
+        path: 'styles.css',
+        content: cssMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"'),
+        type: 'css'
+      });
+    }
+    
+    // Extract JS file
+    const jsMatch = content.match(/"path":\s*"script\.js"[\s\S]*?"content":\s*"([\s\S]*?)"[\s\S]*?"type":\s*"js"/);
+    if (jsMatch) {
+      files.push({
+        path: 'script.js',
+        content: jsMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"'),
+        type: 'js'
+      });
+    }
+    
+    return {
+      files,
+      pages: ['index.html']
+    };
   }
 }
