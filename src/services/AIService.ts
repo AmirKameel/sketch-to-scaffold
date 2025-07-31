@@ -29,6 +29,13 @@ export interface GenerationResponse {
 
 export const AI_MODELS: AIModel[] = [
   {
+    id: 'gemini-2.5-pro',
+    name: 'Gemini 2.5 Pro',
+    provider: 'gemini',
+    maxTokens: 8192,
+    supportsVision: true
+  },
+  {
     id: 'gemini-2.0-flash-exp',
     name: 'Gemini 2.0 Flash (Experimental)',
     provider: 'gemini',
@@ -207,60 +214,87 @@ SCREENSHOT ANALYSIS INSTRUCTIONS:
 
 ${!isMultiPage ? `
 SINGLE-PAGE LANDING PAGE STRUCTURE (MANDATORY):
-Create a professional landing page with these exact sections in order:
+Create a stunning, professional landing page with these exact sections in perfect order:
 
-1. HEADER SECTION:
-   - Fixed/sticky navigation bar with logo and menu items
-   - Clean, modern design with smooth scrolling navigation
-   - Mobile hamburger menu for responsive design
+1. HEADER/NAVIGATION SECTION:
+   - Sleek fixed/sticky navigation bar with elegant logo and smooth menu transitions
+   - Glass morphism effects with backdrop blur
+   - Mobile-first responsive hamburger menu with smooth animations
+   - Gradient background with subtle animations
+   - Modern typography with perfect spacing
 
 2. HERO SECTION:
-   - Full-screen height with background image [IMAGE:hero]
-   - Compelling headline and subheadline
-   - Call-to-action button
-   - Modern overlay effects and typography
+   - Full viewport height with stunning background image [IMAGE:hero]
+   - Bold, attention-grabbing headline with animated text reveal
+   - Compelling subheadline with perfect typography hierarchy
+   - Prominent gradient call-to-action button with hover animations
+   - Floating particles or subtle background animations
+   - Perfect overlay with gradient effects for text readability
 
-3. ABOUT SECTION:
-   - Two-column layout: image [IMAGE:about] on left, content on right
-   - Company/service description with engaging copy
-   - Professional styling with proper spacing
+3. ABOUT/COMPANY SECTION:
+   - Elegant two-column responsive layout
+   - Left: High-quality image [IMAGE:about] with modern border radius and shadows
+   - Right: Engaging company story with beautiful typography
+   - Animated counters or statistics if relevant
+   - Smooth scroll-triggered animations
+   - Professional spacing and visual hierarchy
 
 4. SERVICES/FEATURES SECTION:
-   - Grid layout with service cards (3-4 items)
-   - Each card: image [IMAGE:service1], [IMAGE:service2], [IMAGE:service3], title, description
-   - Hover effects and modern card design
-   - Icons or images for each service
+   - Modern CSS Grid layout with 3-4 stunning service cards
+   - Each card: Beautiful image [IMAGE:service1], [IMAGE:service2], [IMAGE:service3], [IMAGE:service4]
+   - Card titles with perfect typography
+   - Descriptive text with optimal line height
+   - Hover effects with scale, shadow, and color transitions
+   - Icons with gradient effects
+   - Responsive masonry layout
 
 5. TESTIMONIALS/REVIEWS SECTION:
-   - Customer testimonials or reviews
-   - Profile images [IMAGE:testimonial1], [IMAGE:testimonial2] 
-   - Star ratings and quote styling
-   - Carousel or grid layout
+   - Customer testimonials with professional styling
+   - Profile images [IMAGE:testimonial1], [IMAGE:testimonial2], [IMAGE:testimonial3]
+   - 5-star rating systems with golden stars
+   - Quote styling with elegant typography
+   - Carousel with smooth transitions or beautiful grid
+   - Company logos or badges for credibility
 
-6. GALLERY/PORTFOLIO SECTION (if relevant):
-   - Image gallery [IMAGE:gallery1], [IMAGE:gallery2], [IMAGE:gallery3], [IMAGE:gallery4]
-   - Masonry or grid layout with hover effects
-   - Lightbox functionality
+6. GALLERY/PORTFOLIO SECTION:
+   - Stunning image gallery [IMAGE:gallery1], [IMAGE:gallery2], [IMAGE:gallery3], [IMAGE:gallery4], [IMAGE:gallery5], [IMAGE:gallery6]
+   - Masonry or grid layout with perfect spacing
+   - Hover effects with zoom and overlay animations
+   - Lightbox modal functionality with smooth transitions
+   - Filter/category buttons if relevant
 
-7. CONTACT SECTION:
-   - Contact form with validation
-   - Company information and location
-   - Background image [IMAGE:contact] or map integration
+7. STATS/ACHIEVEMENTS SECTION (if relevant):
+   - Animated counters with scroll-triggered animations
+   - Background image [IMAGE:stats] with overlay
+   - Achievement badges or awards
+   - Visual progress bars or charts
 
-8. FOOTER:
-   - Company info, links, social media
-   - Copyright and additional navigation
-   - Clean, organized layout
+8. CONTACT SECTION:
+   - Professional contact form with modern styling
+   - Form validation with beautiful error states
+   - Company information with icons
+   - Background image [IMAGE:contact] or subtle patterns
+   - Maps integration or location details
+   - Social media links with hover animations
+
+9. FOOTER:
+   - Multi-column layout with organized links
+   - Company information and social media
+   - Newsletter signup with modern styling
+   - Copyright with elegant typography
+   - Back-to-top button with smooth scroll
 
 DESIGN REQUIREMENTS:
-- Use modern CSS Grid and Flexbox for layouts
-- Implement smooth scrolling and scroll-triggered animations
-- Add CSS transitions and hover effects throughout
-- Use CSS variables for consistent theming
-- Implement parallax effects for background images
-- Add loading animations and micro-interactions
-- Use box-shadows, gradients, and modern visual effects
-- Ensure perfect responsive design for all screen sizes
+- Use modern CSS Grid and Flexbox for perfect layouts
+- Implement smooth scrolling and scroll-triggered reveal animations
+- Add CSS transitions, transforms, and hover effects throughout
+- Use CSS variables for consistent color theming and spacing
+- Implement parallax effects and background attachments
+- Add loading animations, micro-interactions, and button effects
+- Use modern box-shadows, gradients, and glassmorphism effects
+- Implement dark/light mode with CSS variables
+- Perfect responsive design for mobile, tablet, and desktop
+- Use modern typography with perfect font weights and spacing
 ` : ''}
 
 IMAGE INTEGRATION INSTRUCTIONS:
@@ -274,14 +308,18 @@ IMAGE INTEGRATION INSTRUCTIONS:
 - Size images appropriately with CSS classes and proper aspect ratios
 
 ADVANCED STYLING REQUIREMENTS:
-- Implement CSS animations (fade-in, slide-up, etc.)
-- Use modern color schemes with gradients and shadows
-- Add particle effects or subtle background animations
-- Implement smooth scrolling and section reveal animations
-- Use advanced typography with multiple font weights
-- Add CSS transforms for interactive elements
-- Implement modern button designs with hover states
-- Use CSS backdrop-filter for modern glass effects
+- Implement stunning CSS animations (fade-in, slide-up, rotate, scale)
+- Use modern color schemes with beautiful gradients and realistic shadows
+- Add subtle particle effects or floating animations
+- Implement smooth AOS (Animate On Scroll) reveal animations
+- Use premium typography with multiple font weights and perfect spacing
+- Add CSS transforms for all interactive elements
+- Implement modern button designs with multiple hover states
+- Use CSS backdrop-filter for glassmorphism effects
+- Add loading spinners and skeleton screens
+- Implement modern card designs with elevation shadows
+- Use CSS clip-path for unique shapes and designs
+- Add smooth page transitions and element morphing
 
 TECHNICAL REQUIREMENTS:
 - Use semantic HTML5 elements (header, nav, main, section, article, footer)
