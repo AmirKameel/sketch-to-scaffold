@@ -452,13 +452,26 @@ IMPORTANT: Return ONLY the JSON response, no additional text or explanations.`;
   private static parseGeneratedContent(content: string): GenerationResponse {
     try {
       // Extract JSON from the response (remove any markdown formatting)
-      const jsonMatch = content.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/) || content.match(/(\{[\s\S]*\})/);
+      let jsonMatch = content.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/) || content.match(/(\{[\s\S]*\})/);
       if (!jsonMatch) {
         throw new Error('No valid JSON found in response');
       }
 
-      const jsonStr = jsonMatch[1];
-      const parsed = JSON.parse(jsonStr);
+      let jsonStr = jsonMatch[1];
+      
+      // Try to fix common JSON issues
+      jsonStr = this.sanitizeJsonString(jsonStr);
+      
+      let parsed;
+      try {
+        parsed = JSON.parse(jsonStr);
+      } catch (parseError) {
+        console.error('Initial JSON parse failed, attempting to fix...', parseError);
+        
+        // Try to fix unescaped quotes in content
+        jsonStr = this.fixJsonQuotes(jsonStr);
+        parsed = JSON.parse(jsonStr);
+      }
 
       return {
         success: true,
@@ -467,11 +480,76 @@ IMPORTANT: Return ONLY the JSON response, no additional text or explanations.`;
       };
     } catch (error) {
       console.error('Error parsing generated content:', error);
+      console.log('Content length:', content.length);
+      console.log('Content preview:', content.substring(0, 500));
+      
       return {
         success: false,
         files: [],
-        error: 'Failed to parse generated content'
+        error: `Failed to parse generated content: ${error instanceof Error ? error.message : 'Unknown error'}`
       };
+    }
+  }
+
+  private static sanitizeJsonString(jsonStr: string): string {
+    // Remove any leading/trailing whitespace
+    jsonStr = jsonStr.trim();
+    
+    // Ensure it starts and ends with braces
+    if (!jsonStr.startsWith('{')) {
+      const openBrace = jsonStr.indexOf('{');
+      if (openBrace !== -1) {
+        jsonStr = jsonStr.substring(openBrace);
+      }
+    }
+    
+    if (!jsonStr.endsWith('}')) {
+      const closeBrace = jsonStr.lastIndexOf('}');
+      if (closeBrace !== -1) {
+        jsonStr = jsonStr.substring(0, closeBrace + 1);
+      }
+    }
+    
+    return jsonStr;
+  }
+
+  private static fixJsonQuotes(jsonStr: string): string {
+    try {
+      // Split by content sections to fix quotes within file content
+      const lines = jsonStr.split('\n');
+      let inContent = false;
+      let contentIndentLevel = 0;
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        
+        // Detect start of content field
+        if (line.includes('"content":')) {
+          inContent = true;
+          contentIndentLevel = line.search(/\S/);
+          continue;
+        }
+        
+        // Detect end of content field (next field at same or lower indent level)
+        if (inContent) {
+          const currentIndent = line.search(/\S/);
+          if (currentIndent !== -1 && currentIndent <= contentIndentLevel && 
+              (line.includes('"type":') || line.includes('"path":') || line.includes('}'))) {
+            inContent = false;
+            continue;
+          }
+          
+          // Fix quotes within content
+          if (line.includes('"') && !line.trim().startsWith('"') && !line.trim().endsWith('",')) {
+            lines[i] = line.replace(/"/g, '\\"');
+          }
+        }
+      }
+      
+      return lines.join('\n');
+    } catch (error) {
+      console.error('Error fixing JSON quotes:', error);
+      return jsonStr;
     }
   }
 }
