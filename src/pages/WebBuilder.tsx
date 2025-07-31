@@ -28,6 +28,7 @@ export const WebBuilder = () => {
   const [pages, setPages] = useState<string[]>(['index.html']);
   const [isGenerating, setIsGenerating] = useState(false);
   const [projectType, setProjectType] = useState<'single-page' | 'multi-page'>('single-page');
+  const [generationProgress, setGenerationProgress] = useState('');
   const { toast } = useToast();
 
   const handleGenerate = async () => {
@@ -50,6 +51,7 @@ export const WebBuilder = () => {
     }
 
     setIsGenerating(true);
+    setGenerationProgress('Starting generation...');
 
     try {
       const request: GenerationRequest = {
@@ -57,6 +59,27 @@ export const WebBuilder = () => {
         model: selectedModel,
         image: uploadedImage || undefined,
         projectType,
+        onProgress: (content: string, isComplete: boolean) => {
+          // Try to parse partial content and show preview
+          if (isComplete) {
+            setGenerationProgress('Processing images...');
+          } else {
+            setGenerationProgress('Generating content...');
+          }
+          
+          // Try to extract and show partial files
+          try {
+            const partialResponse = AIService.parseGeneratedContent(content);
+            if (partialResponse.success && partialResponse.files.length > 0) {
+              setFiles(partialResponse.files);
+              setPages(partialResponse.pages || ['index.html']);
+              setCurrentPage(partialResponse.pages?.[0] || 'index.html');
+              setSelectedFile(partialResponse.files[0]?.path || '');
+            }
+          } catch (error) {
+            // Ignore parsing errors during progress updates
+          }
+        }
       };
 
       const response = await AIService.generateWebsite(request);
@@ -87,6 +110,7 @@ export const WebBuilder = () => {
       });
     } finally {
       setIsGenerating(false);
+      setGenerationProgress('');
     }
   };
 
@@ -198,7 +222,7 @@ export const WebBuilder = () => {
               {isGenerating ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Generating...
+                  {generationProgress || 'Generating...'}
                 </>
               ) : (
                 <>

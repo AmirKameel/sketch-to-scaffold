@@ -14,6 +14,7 @@ export interface GenerationRequest {
   image?: File;
   context?: string;
   projectType: 'single-page' | 'multi-page';
+  onProgress?: (content: string, isComplete: boolean) => void;
 }
 
 export interface GenerationResponse {
@@ -170,6 +171,11 @@ export class AIService {
         
         if (!content) {
           throw new Error('No content generated from Gemini');
+        }
+
+        // Call progress callback with complete content
+        if (request.onProgress) {
+          request.onProgress(content, true);
         }
 
         return await this.enhanceWithImages(content, request);
@@ -449,37 +455,31 @@ IMPORTANT: Return ONLY the JSON response, no additional text or explanations.`;
     });
   }
 
-  private static parseGeneratedContent(content: string): GenerationResponse {
+  static parseGeneratedContent(content: string): GenerationResponse {
     try {
-      // First, try to extract JSON from markdown code blocks
-      let jsonStr = this.extractJsonFromContent(content);
+      console.log('Parsing content, length:', content.length);
       
+      // Try direct regex extraction first (most reliable)
+      const regexResult = this.parseWithRegex(content);
+      if (regexResult && regexResult.files && regexResult.files.length > 0) {
+        console.log('Successfully parsed with regex');
+        return {
+          success: true,
+          files: regexResult.files,
+          pages: regexResult.pages || ['index.html']
+        };
+      }
+
+      // Fallback to JSON parsing
+      let jsonStr = this.extractJsonFromContent(content);
       if (!jsonStr) {
         throw new Error('No valid JSON structure found in response');
       }
 
-      let parsed;
+      // Clean the JSON string more aggressively
+      jsonStr = this.sanitizeJsonString(jsonStr);
       
-      // Try progressive fixing strategies
-      const strategies = [
-        () => JSON.parse(jsonStr), // Try as-is first
-        () => JSON.parse(this.sanitizeJsonString(jsonStr)), // Basic sanitization
-        () => JSON.parse(this.fixContentFields(jsonStr)), // Fix content fields specifically
-        () => this.parseWithRegex(content) // Fallback to regex extraction
-      ];
-
-      for (const strategy of strategies) {
-        try {
-          parsed = strategy();
-          if (parsed && parsed.files) {
-            break;
-          }
-        } catch (error) {
-          console.log('Strategy failed:', error.message);
-          continue;
-        }
-      }
-
+      const parsed = JSON.parse(jsonStr);
       if (!parsed || !parsed.files) {
         throw new Error('Could not parse valid file structure from response');
       }
@@ -491,8 +491,12 @@ IMPORTANT: Return ONLY the JSON response, no additional text or explanations.`;
       };
     } catch (error) {
       console.error('Error parsing generated content:', error);
-      console.log('Content length:', content.length);
-      console.log('Content preview:', content.substring(0, 1000));
+      
+      // Final fallback: create minimal HTML if we can find any content
+      const fallbackResult = this.createFallbackContent(content);
+      if (fallbackResult.files.length > 0) {
+        return fallbackResult;
+      }
       
       return {
         success: false,
@@ -619,44 +623,134 @@ IMPORTANT: Return ONLY the JSON response, no additional text or explanations.`;
   }
 
   private static parseWithRegex(content: string): any {
-    // Fallback: try to extract files using regex patterns
     console.log('Using regex fallback parser...');
     
     const files = [];
     
-    // Extract HTML file
-    const htmlMatch = content.match(/"path":\s*"index\.html"[\s\S]*?"content":\s*"([\s\S]*?)"[\s\S]*?"type":\s*"html"/);
-    if (htmlMatch) {
+    // More aggressive patterns to extract content
+    const patterns = [
+      // Try to find complete HTML with proper escaping
+      /<!DOCTYPE html[\s\S]*?<\/html>/i,
+      // Try to find HTML content between quotes
+      /"content":\s*"(<!DOCTYPE html[\s\S]*?<\/html>)"/i,
+      // Try to find any HTML content
+      /<html[\s\S]*?<\/html>/i
+    ];
+
+    let htmlContent = '';
+    for (const pattern of patterns) {
+      const match = content.match(pattern);
+      if (match) {
+        htmlContent = match[1] || match[0];
+        // Clean up escaped characters
+        htmlContent = htmlContent
+          .replace(/\\n/g, '\n')
+          .replace(/\\"/g, '"')
+          .replace(/\\t/g, '\t')
+          .replace(/\\\\/g, '\\');
+        break;
+      }
+    }
+
+    if (htmlContent) {
       files.push({
         path: 'index.html',
-        content: htmlMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"'),
+        content: htmlContent,
         type: 'html'
       });
     }
-    
-    // Extract CSS file
-    const cssMatch = content.match(/"path":\s*"styles\.css"[\s\S]*?"content":\s*"([\s\S]*?)"[\s\S]*?"type":\s*"css"/);
-    if (cssMatch) {
-      files.push({
-        path: 'styles.css',
-        content: cssMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"'),
-        type: 'css'
-      });
+
+    // Extract CSS - try multiple patterns
+    const cssPatterns = [
+      /"content":\s*"([^"]*\/\*[\s\S]*?\*\/[\s\S]*?)"/i,
+      /\/\*[\s\S]*?\*\/[\s\S]*?}/i
+    ];
+
+    for (const pattern of cssPatterns) {
+      const match = content.match(pattern);
+      if (match) {
+        const cssContent = (match[1] || match[0])
+          .replace(/\\n/g, '\n')
+          .replace(/\\"/g, '"')
+          .replace(/\\t/g, '\t');
+        
+        files.push({
+          path: 'styles.css',
+          content: cssContent,
+          type: 'css'
+        });
+        break;
+      }
     }
-    
-    // Extract JS file
-    const jsMatch = content.match(/"path":\s*"script\.js"[\s\S]*?"content":\s*"([\s\S]*?)"[\s\S]*?"type":\s*"js"/);
-    if (jsMatch) {
-      files.push({
-        path: 'script.js',
-        content: jsMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"'),
-        type: 'js'
-      });
+
+    // Extract JavaScript
+    const jsPatterns = [
+      /"content":\s*"([^"]*function[\s\S]*?)"/i,
+      /"content":\s*"([^"]*document\.[\s\S]*?)"/i
+    ];
+
+    for (const pattern of jsPatterns) {
+      const match = content.match(pattern);
+      if (match) {
+        const jsContent = match[1]
+          .replace(/\\n/g, '\n')
+          .replace(/\\"/g, '"')
+          .replace(/\\t/g, '\t');
+        
+        files.push({
+          path: 'script.js',
+          content: jsContent,
+          type: 'js'
+        });
+        break;
+      }
     }
     
     return {
       files,
       pages: ['index.html']
+    };
+  }
+
+  private static createFallbackContent(content: string): GenerationResponse {
+    // Last resort: create a basic HTML file if we can extract any meaningful content
+    console.log('Creating fallback content...');
+    
+    const files = [];
+    
+    // Look for any HTML-like content
+    const htmlPattern = /<!DOCTYPE html|<html|<head|<body/i;
+    if (htmlPattern.test(content)) {
+      // Extract the first reasonable HTML snippet
+      let htmlStart = content.search(htmlPattern);
+      if (htmlStart !== -1) {
+        let htmlContent = content.substring(htmlStart);
+        
+        // Try to find a reasonable ending
+        const htmlEnd = htmlContent.search(/<\/html>|$/) + 7;
+        htmlContent = htmlContent.substring(0, htmlEnd);
+        
+        // Clean up
+        htmlContent = htmlContent
+          .replace(/\\n/g, '\n')
+          .replace(/\\"/g, '"')
+          .replace(/\\t/g, '\t')
+          .replace(/\\\\/g, '\\');
+        
+        if (htmlContent.length > 50) { // Only if we have substantial content
+          files.push({
+            path: 'index.html',
+            content: htmlContent,
+            type: 'html'
+          });
+        }
+      }
+    }
+    
+    return {
+      success: files.length > 0,
+      files,
+      pages: files.length > 0 ? ['index.html'] : []
     };
   }
 }
