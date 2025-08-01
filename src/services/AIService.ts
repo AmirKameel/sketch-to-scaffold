@@ -337,6 +337,34 @@ TECHNICAL REQUIREMENTS:
 - Implement form validation and interactive elements
 - Ensure fast loading and optimized performance
 
+MANDATORY FILES TO GENERATE:
+You MUST generate all three files:
+1. index.html - Complete HTML structure with proper references to styles.css and script.js
+2. styles.css - Complete CSS with all styling, animations, and responsive design
+3. script.js - Interactive JavaScript for animations, form handling, and dynamic functionality
+
+CSS FILE REQUIREMENTS (styles.css):
+- Reset/normalize styles at the top
+- CSS variables for colors, fonts, and spacing
+- Mobile-first responsive design with breakpoints
+- Smooth animations and transitions for all interactive elements
+- Modern design effects (glassmorphism, gradients, shadows)
+- AOS animation classes and custom animations
+- Form styling and validation states
+- Loading spinner and state styles
+- Dark/light mode support (optional)
+
+JAVASCRIPT FILE REQUIREMENTS (script.js):
+- DOM ready functionality
+- Smooth scrolling navigation
+- Mobile menu toggle functionality  
+- AOS initialization and scroll animations
+- Form handling and validation
+- Counter animations for statistics
+- Image loading and optimization
+- Any interactive features needed
+- Performance optimizations
+
 OUTPUT FORMAT:
 Return your response in the following JSON structure:
 {
@@ -348,21 +376,35 @@ Return your response in the following JSON structure:
     },
     {
       "path": "styles.css", 
-      "content": "/* Advanced CSS with animations and modern design */",
+      "content": "/* Complete CSS with reset, variables, responsive design, animations */",
       "type": "css"
     },
     {
       "path": "script.js",
-      "content": "// Interactive JavaScript for animations and functionality",
+      "content": "// Complete JavaScript with DOM ready, navigation, animations, forms",
       "type": "js"
     }
   ],
   "pages": ["index.html"]
 }
 
-CRITICAL: Create visually stunning, modern websites that look professional and engaging. Use the latest web design trends, smooth animations, and beautiful visual effects. Every section should be carefully crafted with attention to spacing, typography, and visual hierarchy.
+CRITICAL RULES:
+1. Generate ALL THREE FILES - HTML, CSS, and JS
+2. CSS must be complete and self-contained with all styles needed
+3. JavaScript must handle all interactive functionality
+4. HTML must properly reference styles.css and script.js
+5. Create visually stunning, modern websites with smooth animations
+6. Use latest web design trends and beautiful visual effects
+7. Return ONLY the JSON response, no additional text or explanations
 
-IMPORTANT: Return ONLY the JSON response, no additional text or explanations.`;
+FALLBACK STRATEGY:
+If you cannot generate proper JSON, create the content with clear file separators:
+=== index.html ===
+[HTML content]
+=== styles.css ===
+[CSS content]  
+=== script.js ===
+[JavaScript content]`;
   }
 
   private static async enhanceWithImages(content: string, request: GenerationRequest): Promise<GenerationResponse> {
@@ -434,11 +476,16 @@ IMPORTANT: Return ONLY the JSON response, no additional text or explanations.`;
         });
       }
 
+      // Ensure we have all required files (HTML, CSS, JS)
+      response.files = this.ensureAllRequiredFiles(response.files);
+      
       return response;
     } catch (error) {
       console.error('Error enhancing with images:', error);
       // Return original response if image enhancement fails
-      return this.parseGeneratedContent(content);
+      const fallbackResponse = this.parseGeneratedContent(content);
+      fallbackResponse.files = this.ensureAllRequiredFiles(fallbackResponse.files);
+      return fallbackResponse;
     }
   }
 
@@ -627,8 +674,14 @@ IMPORTANT: Return ONLY the JSON response, no additional text or explanations.`;
     
     const files = [];
     
-    // More aggressive patterns to extract content
-    const patterns = [
+    // First, try to parse fallback strategy format
+    const fallbackResult = this.parseFallbackFormat(content);
+    if (fallbackResult.files.length > 0) {
+      return fallbackResult;
+    }
+    
+    // More aggressive patterns to extract content from JSON
+    const htmlPatterns = [
       // Try to find complete HTML with proper escaping
       /<!DOCTYPE html[\s\S]*?<\/html>/i,
       // Try to find HTML content between quotes
@@ -638,7 +691,7 @@ IMPORTANT: Return ONLY the JSON response, no additional text or explanations.`;
     ];
 
     let htmlContent = '';
-    for (const pattern of patterns) {
+    for (const pattern of htmlPatterns) {
       const match = content.match(pattern);
       if (match) {
         htmlContent = match[1] || match[0];
@@ -662,48 +715,107 @@ IMPORTANT: Return ONLY the JSON response, no additional text or explanations.`;
 
     // Extract CSS - try multiple patterns
     const cssPatterns = [
+      // Look for CSS in "styles.css" content field
+      /"path":\s*"styles\.css"[\s\S]*?"content":\s*"([^"]*[\s\S]*?)"/i,
+      // Look for CSS comments and rules
       /"content":\s*"([^"]*\/\*[\s\S]*?\*\/[\s\S]*?)"/i,
-      /\/\*[\s\S]*?\*\/[\s\S]*?}/i
+      // Look for CSS selectors and properties
+      /"content":\s*"([^"]*\{[\s\S]*?\}[\s\S]*?)"/i,
+      // Find CSS outside JSON
+      /\/\*[\s\S]*?\*\/[\s\S]*?\{[\s\S]*?\}/
     ];
 
     for (const pattern of cssPatterns) {
       const match = content.match(pattern);
       if (match) {
-        const cssContent = (match[1] || match[0])
+        let cssContent = match[1] || match[0];
+        cssContent = cssContent
           .replace(/\\n/g, '\n')
           .replace(/\\"/g, '"')
-          .replace(/\\t/g, '\t');
+          .replace(/\\t/g, '\t')
+          .replace(/\\\\/g, '\\');
         
-        files.push({
-          path: 'styles.css',
-          content: cssContent,
-          type: 'css'
-        });
-        break;
+        if (cssContent.includes('{') && cssContent.length > 50) {
+          files.push({
+            path: 'styles.css',
+            content: cssContent,
+            type: 'css'
+          });
+          break;
+        }
       }
     }
 
-    // Extract JavaScript
+    // Extract JavaScript - try multiple patterns
     const jsPatterns = [
+      // Look for JS in "script.js" content field
+      /"path":\s*"script\.js"[\s\S]*?"content":\s*"([^"]*[\s\S]*?)"/i,
+      // Look for functions
       /"content":\s*"([^"]*function[\s\S]*?)"/i,
-      /"content":\s*"([^"]*document\.[\s\S]*?)"/i
+      // Look for document interactions
+      /"content":\s*"([^"]*document\.[\s\S]*?)"/i,
+      // Look for event listeners
+      /"content":\s*"([^"]*addEventListener[\s\S]*?)"/i,
+      // Find JS outside JSON
+      /document\.[\s\S]*?;|function[\s\S]*?\}|addEventListener[\s\S]*?\}/
     ];
 
     for (const pattern of jsPatterns) {
       const match = content.match(pattern);
       if (match) {
-        const jsContent = match[1]
+        let jsContent = match[1] || match[0];
+        jsContent = jsContent
           .replace(/\\n/g, '\n')
           .replace(/\\"/g, '"')
-          .replace(/\\t/g, '\t');
+          .replace(/\\t/g, '\t')
+          .replace(/\\\\/g, '\\');
         
-        files.push({
-          path: 'script.js',
-          content: jsContent,
-          type: 'js'
-        });
-        break;
+        if ((jsContent.includes('function') || jsContent.includes('document') || jsContent.includes('addEventListener')) && jsContent.length > 20) {
+          files.push({
+            path: 'script.js',
+            content: jsContent,
+            type: 'js'
+          });
+          break;
+        }
       }
+    }
+    
+    return {
+      files,
+      pages: ['index.html']
+    };
+  }
+
+  private static parseFallbackFormat(content: string): any {
+    const files = [];
+    
+    // Check if content uses fallback format with === separators
+    const htmlMatch = content.match(/=== index\.html ===\s*([\s\S]*?)(?=\s*===|\s*$)/i);
+    if (htmlMatch) {
+      files.push({
+        path: 'index.html',
+        content: htmlMatch[1].trim(),
+        type: 'html'
+      });
+    }
+    
+    const cssMatch = content.match(/=== styles\.css ===\s*([\s\S]*?)(?=\s*===|\s*$)/i);
+    if (cssMatch) {
+      files.push({
+        path: 'styles.css',
+        content: cssMatch[1].trim(),
+        type: 'css'
+      });
+    }
+    
+    const jsMatch = content.match(/=== script\.js ===\s*([\s\S]*?)(?=\s*===|\s*$)/i);
+    if (jsMatch) {
+      files.push({
+        path: 'script.js',
+        content: jsMatch[1].trim(),
+        type: 'js'
+      });
     }
     
     return {
@@ -743,6 +855,20 @@ IMPORTANT: Return ONLY the JSON response, no additional text or explanations.`;
             content: htmlContent,
             type: 'html'
           });
+          
+          // Generate basic CSS file if missing
+          files.push({
+            path: 'styles.css',
+            content: this.generateBasicCSS(),
+            type: 'css'
+          });
+          
+          // Generate basic JS file if missing
+          files.push({
+            path: 'script.js',
+            content: this.generateBasicJS(),
+            type: 'js'
+          });
         }
       }
     }
@@ -752,5 +878,539 @@ IMPORTANT: Return ONLY the JSON response, no additional text or explanations.`;
       files,
       pages: files.length > 0 ? ['index.html'] : []
     };
+  }
+
+  private static generateBasicCSS(): string {
+    return `/* Reset and Base Styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --primary-color: #2563eb;
+  --primary-dark: #1d4ed8;
+  --text-dark: #1f2937;
+  --text-light: #6b7280;
+  --bg-light: #f9fafb;
+  --white: #ffffff;
+  --shadow: 0 10px 25px -3px rgba(0, 0, 0, 0.1);
+  --transition: all 0.3s ease;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  line-height: 1.6;
+  color: var(--text-dark);
+  background-color: var(--white);
+}
+
+/* Typography */
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 600;
+  line-height: 1.3;
+  margin-bottom: 1rem;
+}
+
+h1 { font-size: 2.5rem; }
+h2 { font-size: 2rem; }
+h3 { font-size: 1.5rem; }
+
+p {
+  margin-bottom: 1rem;
+  color: var(--text-light);
+}
+
+/* Layout */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+.container-fluid {
+  width: 100%;
+  padding: 0 1rem;
+}
+
+/* Header */
+.header {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  padding: 1rem 0;
+  transition: var(--transition);
+}
+
+.header.fixed-top {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--primary-color);
+  text-decoration: none;
+}
+
+/* Navigation */
+.navbar ul {
+  display: flex;
+  list-style: none;
+  gap: 2rem;
+  align-items: center;
+}
+
+.nav-link {
+  color: var(--text-dark);
+  text-decoration: none;
+  font-weight: 500;
+  transition: var(--transition);
+  position: relative;
+}
+
+.nav-link:hover,
+.nav-link.active {
+  color: var(--primary-color);
+}
+
+.nav-link::after {
+  content: '';
+  position: absolute;
+  bottom: -5px;
+  left: 0;
+  width: 0;
+  height: 2px;
+  background: var(--primary-color);
+  transition: var(--transition);
+}
+
+.nav-link:hover::after,
+.nav-link.active::after {
+  width: 100%;
+}
+
+/* Hero Section */
+.hero {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+  color: var(--white);
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.hero h1 {
+  font-size: 3.5rem;
+  margin-bottom: 1.5rem;
+  animation: fadeInUp 1s ease;
+}
+
+.hero h2 {
+  font-size: 1.25rem;
+  font-weight: 400;
+  margin-bottom: 2rem;
+  opacity: 0.9;
+  animation: fadeInUp 1s ease 0.2s both;
+}
+
+/* Buttons */
+.btn-get-started {
+  display: inline-block;
+  background: var(--white);
+  color: var(--primary-color);
+  padding: 1rem 2rem;
+  border-radius: 50px;
+  text-decoration: none;
+  font-weight: 600;
+  transition: var(--transition);
+  box-shadow: var(--shadow);
+  animation: fadeInUp 1s ease 0.4s both;
+}
+
+.btn-get-started:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 20px 35px -3px rgba(0, 0, 0, 0.2);
+}
+
+/* Sections */
+section {
+  padding: 5rem 0;
+}
+
+.section-header {
+  text-align: center;
+  margin-bottom: 3rem;
+}
+
+.section-header h2 {
+  font-size: 2.5rem;
+  margin-bottom: 1rem;
+}
+
+.section-header p {
+  font-size: 1.125rem;
+  color: var(--text-light);
+}
+
+/* Cards */
+.feature-card,
+.testimonial-item {
+  background: var(--white);
+  border-radius: 15px;
+  padding: 2rem;
+  box-shadow: var(--shadow);
+  transition: var(--transition);
+  height: 100%;
+}
+
+.feature-card:hover,
+.testimonial-item:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 20px 35px -3px rgba(0, 0, 0, 0.15);
+}
+
+/* Grid Layouts */
+.features-grid,
+.testimonials-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 2rem;
+  margin-top: 3rem;
+}
+
+/* Animations */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Loading Spinner */
+#loading-spinner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--white);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+}
+
+.spinner {
+  width: 50px;
+  height: 50px;
+  border: 4px solid var(--bg-light);
+  border-top: 4px solid var(--primary-color);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .hero h1 { font-size: 2.5rem; }
+  .hero h2 { font-size: 1rem; }
+  
+  .navbar ul {
+    display: none;
+  }
+  
+  .mobile-nav-toggle {
+    display: block;
+  }
+  
+  .features-grid,
+  .testimonials-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Utility Classes */
+.d-flex { display: flex; }
+.align-items-center { align-items: center; }
+.justify-content-between { justify-content: space-between; }
+.text-center { text-align: center; }
+.mt-3 { margin-top: 1rem; }
+.mb-3 { margin-bottom: 1rem; }
+.w-100 { width: 100%; }
+.h-100 { height: 100%; }`;
+  }
+
+  private static generateBasicJS(): string {
+    return `// DOM Ready
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize AOS if available
+    if (typeof AOS !== 'undefined') {
+        AOS.init({
+            duration: 800,
+            easing: 'ease-in-out',
+            once: true,
+            mirror: false
+        });
+    }
+
+    // Initialize PureCounter if available
+    if (typeof PureCounter !== 'undefined') {
+        new PureCounter();
+    }
+
+    // Hide loading spinner
+    const loadingSpinner = document.getElementById('loading-spinner');
+    if (loadingSpinner) {
+        setTimeout(() => {
+            loadingSpinner.style.opacity = '0';
+            setTimeout(() => {
+                loadingSpinner.style.display = 'none';
+            }, 300);
+        }, 500);
+    }
+
+    // Smooth scrolling for navigation links
+    const navLinks = document.querySelectorAll('.nav-link.scrollto, .btn-get-started.scrollto');
+    navLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+            const href = this.getAttribute('href');
+            if (href && href.startsWith('#')) {
+                e.preventDefault();
+                const target = document.querySelector(href);
+                if (target) {
+                    const offsetTop = target.offsetTop - 80; // Account for fixed header
+                    window.scrollTo({
+                        top: offsetTop,
+                        behavior: 'smooth'
+                    });
+                }
+            }
+        });
+    });
+
+    // Mobile navigation toggle
+    const mobileNavToggle = document.querySelector('.mobile-nav-toggle');
+    const navbar = document.querySelector('.navbar ul');
+    
+    if (mobileNavToggle && navbar) {
+        mobileNavToggle.addEventListener('click', function() {
+            navbar.classList.toggle('active');
+            this.classList.toggle('active');
+        });
+    }
+
+    // Header scroll effect
+    const header = document.querySelector('.header');
+    if (header) {
+        window.addEventListener('scroll', function() {
+            if (window.scrollY > 100) {
+                header.classList.add('scrolled');
+            } else {
+                header.classList.remove('scrolled');
+            }
+        });
+    }
+
+    // Back to top button
+    const backToTop = document.querySelector('.back-to-top');
+    if (backToTop) {
+        window.addEventListener('scroll', function() {
+            if (window.scrollY > 300) {
+                backToTop.style.display = 'flex';
+            } else {
+                backToTop.style.display = 'none';
+            }
+        });
+
+        backToTop.addEventListener('click', function(e) {
+            e.preventDefault();
+            window.scrollTo({
+                top: 0,
+                behavior: 'smooth'
+            });
+        });
+    }
+
+    // Form handling
+    const contactForm = document.querySelector('.php-email-form');
+    if (contactForm) {
+        contactForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const loading = this.querySelector('.loading');
+            const errorMessage = this.querySelector('.error-message');
+            const sentMessage = this.querySelector('.sent-message');
+            
+            // Hide all messages
+            if (loading) loading.style.display = 'none';
+            if (errorMessage) errorMessage.style.display = 'none';
+            if (sentMessage) sentMessage.style.display = 'none';
+            
+            // Show loading
+            if (loading) loading.style.display = 'block';
+            
+            // Simulate form submission
+            setTimeout(() => {
+                if (loading) loading.style.display = 'none';
+                if (sentMessage) sentMessage.style.display = 'block';
+                
+                // Reset form
+                this.reset();
+                
+                // Hide success message after 5 seconds
+                setTimeout(() => {
+                    if (sentMessage) sentMessage.style.display = 'none';
+                }, 5000);
+            }, 2000);
+        });
+    }
+
+    // Gallery lightbox functionality
+    const galleryItems = document.querySelectorAll('.gallery-item img');
+    galleryItems.forEach(item => {
+        item.addEventListener('click', function() {
+            // Simple lightbox implementation
+            const overlay = document.createElement('div');
+            overlay.style.cssText = \`
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.9);
+                z-index: 10000;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+            \`;
+            
+            const img = document.createElement('img');
+            img.src = this.src;
+            img.style.cssText = \`
+                max-width: 90%;
+                max-height: 90%;
+                object-fit: contain;
+            \`;
+            
+            overlay.appendChild(img);
+            document.body.appendChild(overlay);
+            
+            overlay.addEventListener('click', function() {
+                document.body.removeChild(overlay);
+            });
+        });
+    });
+
+    // Active navigation highlighting
+    const sections = document.querySelectorAll('section[id]');
+    const navItems = document.querySelectorAll('.nav-link');
+    
+    function highlightNav() {
+        let current = '';
+        sections.forEach(section => {
+            const sectionTop = section.offsetTop - 100;
+            if (window.scrollY >= sectionTop) {
+                current = section.getAttribute('id');
+            }
+        });
+        
+        navItems.forEach(item => {
+            item.classList.remove('active');
+            if (item.getAttribute('href') === '#' + current) {
+                item.classList.add('active');
+            }
+        });
+    }
+    
+    window.addEventListener('scroll', highlightNav);
+    highlightNav(); // Initial call
+});
+
+// Particle effect for hero section (optional)
+function createParticles() {
+    const particlesContainer = document.querySelector('.particles-container');
+    if (!particlesContainer) return;
+    
+    for (let i = 0; i < 50; i++) {
+        const particle = document.createElement('div');
+        particle.style.cssText = \`
+            position: absolute;
+            width: 2px;
+            height: 2px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            animation: float \${Math.random() * 3 + 2}s infinite ease-in-out;
+            left: \${Math.random() * 100}%;
+            top: \${Math.random() * 100}%;
+        \`;
+        particlesContainer.appendChild(particle);
+    }
+}
+
+// Add particle animation CSS
+const style = document.createElement('style');
+style.textContent = \`
+@keyframes float {
+    0%, 100% { transform: translateY(0px) rotate(0deg); }
+    50% { transform: translateY(-20px) rotate(180deg); }
+}
+\`;
+document.head.appendChild(style);
+
+// Create particles on load
+createParticles();`;
+  }
+
+  private static ensureAllRequiredFiles(files: Array<{path: string, content: string, type: 'html' | 'css' | 'js' | 'json'}>): Array<{path: string, content: string, type: 'html' | 'css' | 'js' | 'json'}> {
+    const fileMap = new Map(files.map(f => [f.path, f]));
+    
+    // Ensure HTML file exists
+    if (!fileMap.has('index.html')) {
+      fileMap.set('index.html', {
+        path: 'index.html',
+        content: '<!DOCTYPE html><html><head><title>Generated Page</title><link rel="stylesheet" href="styles.css"></head><body><h1>Welcome</h1><script src="script.js"></script></body></html>',
+        type: 'html'
+      });
+    }
+    
+    // Ensure CSS file exists
+    if (!fileMap.has('styles.css')) {
+      fileMap.set('styles.css', {
+        path: 'styles.css',
+        content: this.generateBasicCSS(),
+        type: 'css'
+      });
+    }
+    
+    // Ensure JS file exists
+    if (!fileMap.has('script.js')) {
+      fileMap.set('script.js', {
+        path: 'script.js',
+        content: this.generateBasicJS(),
+        type: 'js'
+      });
+    }
+    
+    return Array.from(fileMap.values());
   }
 }
