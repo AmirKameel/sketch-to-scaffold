@@ -123,7 +123,7 @@ export class AIService {
         temperature: 0.7,
         topK: 40,
         topP: 0.95,
-        maxOutputTokens: request.model.maxTokens,
+        maxOutputTokens: 8192, // Use maximum tokens for complete generation
       }
     };
 
@@ -218,11 +218,12 @@ SCREENSHOT ANALYSIS INSTRUCTIONS:
 ` : ''}
 
 CRITICAL REQUIREMENTS:
-1. Generate MULTIPLE HTML pages with navigation between them
+1. Generate ${isMultiPage ? 'MULTIPLE HTML pages with navigation between them' : 'ONE COMPLETE SINGLE-PAGE website with ALL sections'}
 2. Use ONLY INLINE TAILWIND CSS - no separate CSS files
 3. Include Tailwind CSS CDN: <script src="https://cdn.tailwindcss.com"></script>
 4. Embed JavaScript directly in HTML using <script> tags
 5. Use relevant Unsplash images with proper URLs
+6. ${isMultiPage ? 'Each page must be complete' : 'The single page MUST include ALL sections - do not cut off early!'}
 
 OUTPUT FORMAT (MANDATORY):
 Return only valid JSON in this exact format:
@@ -230,8 +231,8 @@ Return only valid JSON in this exact format:
   "files": [
     {
       "path": "index.html",
-      "content": "Complete HTML with inline Tailwind"
-    },
+      "content": "Complete HTML with inline Tailwind - MUST include ALL sections"
+    }${isMultiPage ? `,
     {
       "path": "about.html", 
       "content": "Complete HTML with inline Tailwind"
@@ -243,7 +244,7 @@ Return only valid JSON in this exact format:
     {
       "path": "contact.html",
       "content": "Complete HTML with inline Tailwind"
-    }
+    }` : ''}
   ]
 }
 
@@ -267,7 +268,7 @@ UNSPLASH IMAGE INTEGRATION:
 - Use high-quality, professional images that enhance the design
 - Format: https://images.unsplash.com/photo-[id]?w=1200&h=800&fit=crop
 
-MULTI-PAGE STRUCTURE:
+${isMultiPage ? `MULTI-PAGE STRUCTURE:
 Create 4-6 stunning HTML pages with consistent navigation:
 
 1. INDEX.HTML (Homepage):
@@ -293,7 +294,61 @@ Create 4-6 stunning HTML pages with consistent navigation:
    - Interactive contact form with validation
    - Office locations with embedded maps
    - Team contact information cards
-   - Social media integration and links
+   - Social media integration and links` : `SINGLE-PAGE STRUCTURE (ALL SECTIONS REQUIRED - NO EXCEPTIONS):
+Create ONE COMPLETE HTML page with ALL these sections in order:
+
+1. HEADER/NAVIGATION (Fixed with smooth scroll):
+   - Logo and branding
+   - Navigation menu with smooth scroll links
+   - Mobile responsive hamburger menu
+   - Call-to-action button in header
+
+2. HERO SECTION (Eye-catching and dynamic):
+   - Stunning animated background
+   - Compelling headline and subtext
+   - Multiple call-to-action buttons
+   - Visual elements and animations
+
+3. ABOUT/COMPANY SECTION (Story and mission):
+   - Company overview and story
+   - Mission, vision, values
+   - Key differentiators
+   - Visual elements and animations
+
+4. SERVICES/FEATURES SECTION (Core offerings):
+   - Grid of services/features with icons
+   - Hover effects and animations
+   - Detailed descriptions
+   - Pricing or packages if applicable
+
+5. TESTIMONIALS/REVIEWS SECTION (Social proof):
+   - Customer testimonials with photos
+   - Star ratings and quotes
+   - Multiple testimonials in grid or carousel
+
+6. PORTFOLIO/GALLERY SECTION (Showcase work):
+   - Gallery of work/products/achievements
+   - Image grid with hover effects
+   - Case studies or examples
+
+7. STATS/ACHIEVEMENTS SECTION (Credibility):
+   - Animated counter numbers
+   - Key metrics and achievements
+   - Visual progress indicators
+
+8. CONTACT SECTION (Lead generation):
+   - Contact form with validation
+   - Contact information and details
+   - Map or location info
+   - Social media links
+
+9. FOOTER (Complete site links):
+   - Company information
+   - Quick navigation links
+   - Legal pages links
+   - Copyright and social media
+
+CRITICAL: You MUST include ALL 9 sections above. Do not stop early or skip sections!`}
 
 TAILWIND CSS REQUIREMENTS:
 - Use advanced Tailwind classes: backdrop-blur, bg-gradient-to-*, transform, transition-all
@@ -301,6 +356,14 @@ TAILWIND CSS REQUIREMENTS:
 - Use Tailwind's animation classes: animate-pulse, animate-bounce, animate-fade-in
 - Create custom animations with CSS when needed
 - Use proper color palettes and semantic naming
+
+GENERATION RULES:
+- Generate the COMPLETE page in one response
+- If approaching token limits, prioritize essential content but include ALL sections
+- Use concise but impactful copy
+- Focus on visual impact over verbose descriptions
+- Ensure proper HTML structure with DOCTYPE, head, and body tags
+- Include proper meta tags for SEO
 
 Never include any explanations, comments, or text outside the JSON. Only return the valid JSON with the HTML files containing inline Tailwind CSS and embedded JavaScript.`;
   }
