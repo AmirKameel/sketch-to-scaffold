@@ -90,16 +90,27 @@ export class AIService {
         throw new Error(`API key not found for ${request.model.provider}`);
       }
 
+      let response: GenerationResponse;
       switch (request.model.provider) {
         case 'gemini':
-          return await this.generateWithGemini(request, apiKey);
+          response = await this.generateWithGemini(request, apiKey);
+          break;
         case 'openai':
-          return await this.generateWithOpenAI(request, apiKey);
+          response = await this.generateWithOpenAI(request, apiKey);
+          break;
         case 'claude':
-          return await this.generateWithClaude(request, apiKey);
+          response = await this.generateWithClaude(request, apiKey);
+          break;
         default:
           throw new Error(`Unsupported provider: ${request.model.provider}`);
       }
+
+      // Validate and complete if necessary
+      if (response.success && request.projectType === 'single-page') {
+        response = await this.ensureCompleteGeneration(response, request, apiKey);
+      }
+
+      return response;
     } catch (error) {
       console.error('AI Generation Error:', error);
       return {
@@ -638,6 +649,248 @@ Never include any explanations, comments, or text outside the JSON. Only return 
       success: files.length > 0,
       files,
       pages: files.length > 0 ? ['index.html'] : []
+    };
+  }
+
+  private static async ensureCompleteGeneration(response: GenerationResponse, request: GenerationRequest, apiKey: string): Promise<GenerationResponse> {
+    const maxRetries = 3;
+    let currentResponse = response;
+    
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      const validation = this.validateSinglePageContent(currentResponse);
+      
+      if (validation.isComplete) {
+        console.log('Content generation is complete with all required sections');
+        return currentResponse;
+      }
+      
+      console.log(`Content incomplete (attempt ${attempt + 1}/${maxRetries}). Missing sections:`, validation.missingSections);
+      
+      // Generate continuation
+      const continuationRequest: GenerationRequest = {
+        ...request,
+        prompt: this.buildContinuationPrompt(request.prompt, validation.lastSection, validation.missingSections, currentResponse.files[0]?.content || '')
+      };
+      
+      try {
+        const continuationResponse = await this.generateWithGemini(continuationRequest, apiKey);
+        
+        if (continuationResponse.success && continuationResponse.files.length > 0) {
+          // Merge the new content with existing content
+          currentResponse = this.mergeContent(currentResponse, continuationResponse, validation.lastSection);
+          
+          // Update progress callback if available
+          if (request.onProgress) {
+            request.onProgress(currentResponse.files[0]?.content || '', false);
+          }
+        } else {
+          console.warn('Failed to generate continuation content');
+          break;
+        }
+      } catch (error) {
+        console.error('Error generating continuation:', error);
+        break;
+      }
+    }
+    
+    // Final validation and progress callback
+    if (request.onProgress) {
+      const finalValidation = this.validateSinglePageContent(currentResponse);
+      request.onProgress(currentResponse.files[0]?.content || '', finalValidation.isComplete);
+    }
+    
+    return currentResponse;
+  }
+
+  private static validateSinglePageContent(response: GenerationResponse): { isComplete: boolean; missingSections: string[]; lastSection: string } {
+    if (!response.success || response.files.length === 0) {
+      return { isComplete: false, missingSections: ['all'], lastSection: 'none' };
+    }
+    
+    const htmlContent = response.files[0].content;
+    
+    // Required sections for single-page websites
+    const requiredSections = [
+      { id: 'header', patterns: ['<header', 'id="header"', 'class=".*header'] },
+      { id: 'hero', patterns: ['id="hero"', 'hero', 'class=".*hero'] },
+      { id: 'about', patterns: ['id="about"', 'about', 'class=".*about'] },
+      { id: 'services', patterns: ['id="services"', 'id="features"', 'services', 'features'] },
+      { id: 'testimonials', patterns: ['id="testimonials"', 'testimonial', 'class=".*testimonial'] },
+      { id: 'portfolio', patterns: ['id="portfolio"', 'id="gallery"', 'portfolio', 'gallery', 'class=".*portfolio', 'class=".*gallery'] },
+      { id: 'stats', patterns: ['id="stats"', 'id="achievements"', 'stats', 'achievements', 'counter'] },
+      { id: 'contact', patterns: ['id="contact"', 'contact', 'class=".*contact'] },
+      { id: 'footer', patterns: ['<footer', 'id="footer"', 'class=".*footer'] }
+    ];
+    
+    const missingSections: string[] = [];
+    let lastFoundSection = 'header';
+    
+    for (const section of requiredSections) {
+      const hasSection = section.patterns.some(pattern => {
+        const regex = new RegExp(pattern, 'i');
+        return regex.test(htmlContent);
+      });
+      
+      if (hasSection) {
+        lastFoundSection = section.id;
+      } else {
+        missingSections.push(section.id);
+      }
+    }
+    
+    // Check if HTML is properly closed
+    const hasClosingHtml = /<\/html>/i.test(htmlContent);
+    const hasClosingBody = /<\/body>/i.test(htmlContent);
+    
+    const isComplete = missingSections.length === 0 && hasClosingHtml && hasClosingBody;
+    
+    return {
+      isComplete,
+      missingSections,
+      lastSection: lastFoundSection
+    };
+  }
+
+  private static buildContinuationPrompt(originalPrompt: string, lastSection: string, missingSections: string[], existingContent: string): string {
+    const sectionMap: Record<string, string> = {
+      'testimonials': 'TESTIMONIALS/REVIEWS SECTION',
+      'portfolio': 'PORTFOLIO/GALLERY SECTION', 
+      'stats': 'STATS/ACHIEVEMENTS SECTION',
+      'contact': 'CONTACT SECTION',
+      'footer': 'FOOTER'
+    };
+    
+    const nextSections = missingSections.map(section => sectionMap[section] || section.toUpperCase()).join(', ');
+    
+    return `CONTINUE the website generation from where it left off. You are completing a single-page website.
+
+ORIGINAL REQUEST: ${originalPrompt}
+
+CURRENT STATUS: The website generation stopped after the ${lastSection.toUpperCase()} section. 
+
+MISSING SECTIONS TO COMPLETE: ${nextSections}
+
+CRITICAL REQUIREMENTS:
+1. Generate ONLY the missing sections listed above
+2. Start immediately with the next section after ${lastSection.toUpperCase()}
+3. Use ONLY INLINE TAILWIND CSS - no separate CSS files
+4. Maintain consistent design with the existing content
+5. End with proper closing tags: </main>, </body>, </html>
+
+OUTPUT FORMAT (MANDATORY):
+Return only valid JSON in this exact format:
+{
+  "files": [
+    {
+      "path": "index.html",
+      "content": "HTML content for the missing sections ONLY - starting from the next section"
+    }
+  ]
+}
+
+CONTINUE WITH THESE SECTIONS IN ORDER:
+${missingSections.includes('testimonials') ? `
+5. TESTIMONIALS/REVIEWS SECTION (Social proof):
+   - Customer testimonials with photos
+   - Star ratings and quotes
+   - Multiple testimonials in grid or carousel
+` : ''}
+
+${missingSections.includes('portfolio') ? `
+6. PORTFOLIO/GALLERY SECTION (Showcase work):
+   - Gallery of work/products/achievements
+   - Image grid with hover effects
+   - Case studies or examples
+` : ''}
+
+${missingSections.includes('stats') ? `
+7. STATS/ACHIEVEMENTS SECTION (Credibility):
+   - Animated counter numbers
+   - Key metrics and achievements
+   - Visual progress indicators
+` : ''}
+
+${missingSections.includes('contact') ? `
+8. CONTACT SECTION (Lead generation):
+   - Contact form with validation
+   - Contact information and details
+   - Map or location info
+   - Social media links
+` : ''}
+
+${missingSections.includes('footer') ? `
+9. FOOTER (Complete site links):
+   - Company information
+   - Quick navigation links
+   - Legal pages links
+   - Copyright and social media
+
+    </main>
+
+    <!-- JavaScript for interactivity -->
+    <script>
+        // Add necessary JavaScript for animations, form handling, mobile menu, etc.
+    </script>
+
+</body>
+</html>
+` : ''}
+
+Generate STUNNING, UNIQUE designs that make competitors jealous. Use advanced Tailwind CSS techniques and beautiful animations.
+
+Never include any explanations, comments, or text outside the JSON. Only return the valid JSON with the HTML content for the missing sections.`;
+  }
+
+  private static mergeContent(existingResponse: GenerationResponse, continuationResponse: GenerationResponse, lastSection: string): GenerationResponse {
+    if (!existingResponse.files[0] || !continuationResponse.files[0]) {
+      return existingResponse;
+    }
+    
+    let existingContent = existingResponse.files[0].content;
+    const continuationContent = continuationResponse.files[0].content;
+    
+    // Remove any HTML structure from continuation (DOCTYPE, html, head, body opening tags)
+    let cleanContinuation = continuationContent
+      .replace(/<!DOCTYPE[^>]*>/i, '')
+      .replace(/<html[^>]*>/i, '')
+      .replace(/<head[^>]*>[\s\S]*?<\/head>/i, '')
+      .replace(/<body[^>]*>/i, '')
+      .replace(/<main[^>]*>/i, '')
+      .trim();
+    
+    // Find the insertion point in existing content
+    const insertionPatterns = [
+      /<\/main>/i,
+      /<\/body>/i,
+      /<\/html>/i,
+      /$/
+    ];
+    
+    let insertionPoint = -1;
+    for (const pattern of insertionPatterns) {
+      insertionPoint = existingContent.search(pattern);
+      if (insertionPoint !== -1) {
+        break;
+      }
+    }
+    
+    if (insertionPoint === -1) {
+      // If no insertion point found, append to the end
+      insertionPoint = existingContent.length;
+    }
+    
+    // Insert the continuation content
+    const beforeInsertion = existingContent.substring(0, insertionPoint);
+    const afterInsertion = existingContent.substring(insertionPoint);
+    
+    const mergedContent = beforeInsertion + '\n\n' + cleanContinuation + '\n\n' + afterInsertion;
+    
+    return {
+      ...existingResponse,
+      files: [{
+        ...existingResponse.files[0],
+        content: mergedContent
+      }]
     };
   }
 }
