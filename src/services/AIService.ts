@@ -68,7 +68,8 @@ export const AI_MODELS: AIModel[] = [
 
 export class AIService {
   private static apiKeys: Record<string, string> = {
-    'gemini': 'AIzaSyCdN7JK1hpDaziMTfqY8V6GcYq00ufd-UI'
+    'gemini': 'AIzaSyCdN7JK1hpDaziMTfqY8V6GcYq00ufd-UI',
+    'clarifai': 'a859318378284560beec23442a19ba57'
   };
 
   static setApiKey(provider: string, apiKey: string) {
@@ -387,74 +388,152 @@ Never include any explanations, comments, or text outside the JSON. Only return 
         return response;
       }
 
-      // Extract sections that need images from the HTML content
-      const htmlFiles = response.files.filter(f => f.type === 'html');
-      const sectionsMap: Record<string, string[]> = {};
-      
-      htmlFiles.forEach(file => {
-        const imageMatches = file.content.match(/\[IMAGE:(\w+\d*)\]/g);
-        if (imageMatches) {
-          imageMatches.forEach(match => {
-            const fullSection = match.replace(/\[IMAGE:|\]/g, '');
-            // Extract base section name (e.g., 'gallery' from 'gallery1')
-            const baseSection = fullSection.replace(/\d+$/, '');
-            
-            if (!sectionsMap[baseSection]) {
-              sectionsMap[baseSection] = [];
-            }
-            if (!sectionsMap[baseSection].includes(fullSection)) {
-              sectionsMap[baseSection].push(fullSection);
-            }
-          });
-        }
-      });
-
-      // Get contextual images if any sections need them
-      if (Object.keys(sectionsMap).length > 0) {
-        const baseSections = Object.keys(sectionsMap);
-        const imageMap = await UnsplashService.getContextualImages(request.prompt, baseSections);
-        
-        // Replace image placeholders with actual images
-        response.files = response.files.map(file => {
-          if (file.type === 'html') {
-            let updatedContent = file.content;
-            
-            // Process each base section and its variants
-            Object.entries(sectionsMap).forEach(([baseSection, variants]) => {
-              const images = imageMap[baseSection];
-              if (images && images.length > 0) {
-                variants.forEach((variant, index) => {
-                  // Use different images for variants, or cycle through available images
-                  const imageIndex = index % images.length;
-                  const image = images[imageIndex];
-                  
-                  const imageHtml = UnsplashService.getImageMarkup(
-                    image,
-                    `${variant} image`,
-                    'w-full h-auto object-cover'
-                  );
-                  
-                  updatedContent = updatedContent.replace(
-                    `[IMAGE:${variant}]`,
-                    imageHtml
-                  );
-                });
+      // Generate AI images for better visual impact
+      const enhancedFiles = await Promise.all(response.files.map(async (file) => {
+        if (file.type === 'html') {
+          let enhancedContent = file.content;
+          
+          // Identify sections that need images
+          const sections = this.identifyImageSections(enhancedContent, request.prompt);
+          
+          // Generate contextual images using Clarifai
+          for (const section of sections) {
+            try {
+              const imageUrl = await this.generateContextualImage(section.prompt, request.prompt);
+              if (imageUrl) {
+                enhancedContent = enhancedContent.replace(
+                  section.placeholder,
+                  `<img src="${imageUrl}" alt="${section.alt}" class="${section.classes}" loading="lazy" />`
+                );
               }
-            });
-            
-            return { ...file, content: updatedContent };
+            } catch (error) {
+              console.warn(`Failed to generate image for ${section.type}:`, error);
+              // Fallback to Unsplash if Clarifai fails
+              const fallbackImages = await UnsplashService.getContextualImages(request.prompt, [section.type]);
+              if (fallbackImages[section.type]?.length > 0) {
+                const image = fallbackImages[section.type][0];
+                enhancedContent = enhancedContent.replace(
+                  section.placeholder,
+                  UnsplashService.getImageMarkup(image, section.alt, section.classes)
+                );
+              }
+            }
           }
-          return file;
-        });
-      }
+          
+          return { ...file, content: enhancedContent };
+        }
+        return file;
+      }));
 
-      // For multi-page websites with inline Tailwind, we don't need separate CSS/JS files
-      return response;
+      return {
+        success: true,
+        files: enhancedFiles,
+        pages: response.pages
+      };
     } catch (error) {
       console.error('Error enhancing with images:', error);
       // Return original response if image enhancement fails
       const fallbackResponse = this.parseGeneratedContent(content);
       return fallbackResponse;
+    }
+  }
+
+  private static identifyImageSections(content: string, userPrompt: string): Array<{
+    type: string;
+    prompt: string;
+    placeholder: string;
+    alt: string;
+    classes: string;
+  }> {
+    const sections = [];
+    
+    // Hero section images
+    if (content.includes('hero') || content.includes('Hero')) {
+      sections.push({
+        type: 'hero',
+        prompt: `A stunning hero image for ${userPrompt}, professional, high-quality, modern design`,
+        placeholder: /src="https:\/\/images\.unsplash\.com\/[^"]*"/g,
+        alt: 'Hero background image',
+        classes: 'w-full h-full object-cover'
+      });
+    }
+    
+    // About section images
+    if (content.includes('about') || content.includes('About')) {
+      sections.push({
+        type: 'about',
+        prompt: `Professional team or company image for ${userPrompt}, business environment, modern office`,
+        placeholder: /src="https:\/\/images\.unsplash\.com\/[^"]*"/g,
+        alt: 'About us image',
+        classes: 'w-full h-64 object-cover rounded-lg'
+      });
+    }
+    
+    // Services section images
+    if (content.includes('service') || content.includes('Service')) {
+      sections.push({
+        type: 'services',
+        prompt: `Services illustration for ${userPrompt}, professional, clean, modern technology`,
+        placeholder: /src="https:\/\/images\.unsplash\.com\/[^"]*"/g,
+        alt: 'Services image',
+        classes: 'w-full h-48 object-cover rounded-lg'
+      });
+    }
+    
+    // Portfolio/gallery images
+    if (content.includes('portfolio') || content.includes('gallery') || content.includes('work')) {
+      sections.push({
+        type: 'portfolio',
+        prompt: `Portfolio showcase for ${userPrompt}, creative work, professional presentation`,
+        placeholder: /src="https:\/\/images\.unsplash\.com\/[^"]*"/g,
+        alt: 'Portfolio image',
+        classes: 'w-full h-64 object-cover rounded-lg hover:scale-105 transition-transform duration-300'
+      });
+    }
+    
+    return sections;
+  }
+
+  private static async generateContextualImage(imagePrompt: string, userContext: string): Promise<string | null> {
+    try {
+      const apiKey = this.getApiKey('clarifai');
+      if (!apiKey) {
+        console.warn('Clarifai API key not found, falling back to Unsplash');
+        return null;
+      }
+
+      const response = await fetch('https://api.clarifai.com/v2/users/stability-ai/apps/stable-diffusion-2/models/stable-diffusion-xl/versions/68eeab068a5e4488a685fc67bc7ba71e/outputs', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Key ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          inputs: [{
+            data: {
+              text: {
+                raw: `${imagePrompt}, ultra high quality, professional photography, 4K resolution, perfect lighting`
+              }
+            }
+          }]
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Clarifai API error: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const imageUrl = data.outputs?.[0]?.data?.image?.url;
+      
+      if (!imageUrl) {
+        throw new Error('No image URL in Clarifai response');
+      }
+
+      return imageUrl;
+    } catch (error) {
+      console.error('Clarifai image generation failed:', error);
+      return null;
     }
   }
 
