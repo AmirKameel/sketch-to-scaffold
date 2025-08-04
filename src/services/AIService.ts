@@ -893,20 +893,39 @@ Never include any explanations, comments, or text outside the JSON. Only return 
     
     const nextSections = missingSections.map(section => sectionMap[section] || section.toUpperCase()).join(', ');
     
-    return `CONTINUE the website generation from where it left off. You are completing a single-page website.
+    // Find where the content cuts off to determine continuation point
+    const lastLines = this.findLastCompleteContent(existingContent);
+    const cutoffPoint = lastLines.cutoffText;
+    const isIncompleteHTML = lastLines.isIncomplete;
+    
+    return `CRITICAL: CONTINUE the incomplete website from the EXACT point where it was cut off.
 
 ORIGINAL REQUEST: ${originalPrompt}
 
-CURRENT STATUS: The website generation stopped after the ${lastSection.toUpperCase()} section. 
+EXISTING CONTENT ANALYSIS:
+- Last section completed: ${lastSection.toUpperCase()}
+- Content cuts off at: "${cutoffPoint}"
+- Content is incomplete: ${isIncompleteHTML ? 'YES' : 'NO'}
+- Missing sections: ${nextSections}
 
-MISSING SECTIONS TO COMPLETE: ${nextSections}
+${isIncompleteHTML ? `
+CONTINUATION INSTRUCTIONS:
+1. Start from the EXACT line where content was cut off: "${cutoffPoint}"
+2. Complete the incomplete element/section first, then add missing sections
+3. Do NOT create new headers, do NOT duplicate existing content
+4. Continue with the same HTML structure and design patterns
+` : `
+NEW SECTIONS INSTRUCTIONS:
+1. Add the missing sections starting after the last complete section
+2. Maintain the same design style and class patterns
+3. Do NOT duplicate any existing content
+`}
 
-CRITICAL REQUIREMENTS:
-1. Generate ONLY the missing sections listed above
-2. Start immediately with the next section after ${lastSection.toUpperCase()}
-3. Use ONLY INLINE TAILWIND CSS - no separate CSS files
-4. Maintain consistent design with the existing content
-5. End with proper closing tags: </main>, </body>, </html>
+CRITICAL OUTPUT REQUIREMENTS:
+1. Return ONLY the continuation HTML - starting from where it cut off
+2. Use consistent Tailwind CSS classes matching existing content
+3. Complete ALL missing sections: ${nextSections}
+4. End with proper closing tags if this is the final completion
 
 OUTPUT FORMAT (MANDATORY):
 Return only valid JSON in this exact format:
@@ -914,7 +933,7 @@ Return only valid JSON in this exact format:
   "files": [
     {
       "path": "index.html",
-      "content": "HTML content for the missing sections ONLY - starting from the next section"
+      "content": "CONTINUATION HTML ONLY - start exactly where previous content ended"
     }
   ]
 }
@@ -972,6 +991,31 @@ Generate STUNNING, UNIQUE designs that make competitors jealous. Use advanced Ta
 Never include any explanations, comments, or text outside the JSON. Only return the valid JSON with the HTML content for the missing sections.`;
   }
 
+  private static findLastCompleteContent(content: string): { cutoffText: string; isIncomplete: boolean } {
+    // Remove HTML closing tags to find the actual content cutoff
+    const withoutClosingTags = content.replace(/<\/(?:main|body|html)>[\s\S]*$/i, '').trim();
+    
+    // Get the last 200 characters to analyze
+    const lastChunk = withoutClosingTags.slice(-200);
+    const lines = withoutClosingTags.split('\n');
+    const lastLine = lines[lines.length - 1]?.trim() || '';
+    
+    // Check if content appears to be cut off mid-sentence, mid-tag, or incomplete
+    const isIncomplete = 
+      !lastLine.endsWith('>') ||          // Tag not closed
+      lastLine.includes('class="') ||     // Incomplete class attribute
+      lastLine.includes('src="') ||       // Incomplete src attribute
+      !!lastLine.match(/<[^>]*$/) ||      // Open tag not closed
+      lastLine.includes('span-') ||       // Grid span potentially incomplete
+      lastChunk.includes('col-span-') ||  // Grid layout potentially incomplete
+      !withoutClosingTags.includes('</div>'); // Missing closing divs
+    
+    return {
+      cutoffText: lastLine.substring(0, 50) + (lastLine.length > 50 ? '...' : ''),
+      isIncomplete
+    };
+  }
+
   private static mergeContent(existingResponse: GenerationResponse, continuationResponse: GenerationResponse, lastSection: string): GenerationResponse {
     if (!existingResponse.files[0] || !continuationResponse.files[0]) {
       return existingResponse;
@@ -980,48 +1024,86 @@ Never include any explanations, comments, or text outside the JSON. Only return 
     let existingContent = existingResponse.files[0].content;
     const continuationContent = continuationResponse.files[0].content;
     
-    // Remove any HTML structure from continuation (DOCTYPE, html, head, body opening tags)
+    // Remove any complete HTML document structure from continuation
     let cleanContinuation = continuationContent
       .replace(/<!DOCTYPE[^>]*>/i, '')
       .replace(/<html[^>]*>/i, '')
       .replace(/<head[^>]*>[\s\S]*?<\/head>/i, '')
       .replace(/<body[^>]*>/i, '')
-      .replace(/<main[^>]*>/i, '')
       .trim();
     
-    // Find the insertion point in existing content
-    const insertionPatterns = [
-      /<\/main>/i,
-      /<\/body>/i,
-      /<\/html>/i,
-      /$/
-    ];
+    // Remove opening <main> tag if present in continuation
+    cleanContinuation = cleanContinuation.replace(/^<main[^>]*>/i, '').trim();
     
-    let insertionPoint = -1;
-    for (const pattern of insertionPatterns) {
-      insertionPoint = existingContent.search(pattern);
-      if (insertionPoint !== -1) {
-        break;
+    // Check if existing content is incomplete (cuts off mid-element)
+    const lastContentInfo = this.findLastCompleteContent(existingContent);
+    
+    if (lastContentInfo.isIncomplete) {
+      // Find where the incomplete content starts
+      const withoutClosingTags = existingContent.replace(/<\/(?:main|body|html)>[\s\S]*$/i, '');
+      const lines = withoutClosingTags.split('\n');
+      
+      // Find the last complete line (where we should start continuation)
+      let lastCompleteLineIndex = lines.length - 1;
+      while (lastCompleteLineIndex > 0) {
+        const line = lines[lastCompleteLineIndex].trim();
+        if (line.endsWith('>') && !line.includes('span-') && !line.includes('class="')) {
+          break;
+        }
+        lastCompleteLineIndex--;
       }
+      
+      // Reconstruct content up to the last complete line
+      const completeLines = lines.slice(0, lastCompleteLineIndex + 1);
+      const baseContent = completeLines.join('\n');
+      
+      // Find closing tags from original content
+      const closingTagsMatch = existingContent.match(/<\/(?:main|body|html)>[\s\S]*$/i);
+      const closingTags = closingTagsMatch ? closingTagsMatch[0] : '\n    </main>\n\n</body>\n</html>';
+      
+      // Merge: base content + clean continuation + closing tags
+      const mergedContent = baseContent + '\n\n' + cleanContinuation + '\n' + closingTags;
+      
+      return {
+        ...existingResponse,
+        files: [{
+          ...existingResponse.files[0],
+          content: mergedContent
+        }]
+      };
+    } else {
+      // Content is complete, just find insertion point for new sections
+      const insertionPatterns = [
+        /<\/main>/i,
+        /<\/body>/i,
+        /<\/html>/i
+      ];
+      
+      let insertionPoint = -1;
+      for (const pattern of insertionPatterns) {
+        insertionPoint = existingContent.search(pattern);
+        if (insertionPoint !== -1) {
+          break;
+        }
+      }
+      
+      if (insertionPoint === -1) {
+        insertionPoint = existingContent.length;
+      }
+      
+      // Insert the continuation content
+      const beforeInsertion = existingContent.substring(0, insertionPoint);
+      const afterInsertion = existingContent.substring(insertionPoint);
+      
+      const mergedContent = beforeInsertion + '\n\n' + cleanContinuation + '\n' + afterInsertion;
+      
+      return {
+        ...existingResponse,
+        files: [{
+          ...existingResponse.files[0],
+          content: mergedContent
+        }]
+      };
     }
-    
-    if (insertionPoint === -1) {
-      // If no insertion point found, append to the end
-      insertionPoint = existingContent.length;
-    }
-    
-    // Insert the continuation content
-    const beforeInsertion = existingContent.substring(0, insertionPoint);
-    const afterInsertion = existingContent.substring(insertionPoint);
-    
-    const mergedContent = beforeInsertion + '\n\n' + cleanContinuation + '\n\n' + afterInsertion;
-    
-    return {
-      ...existingResponse,
-      files: [{
-        ...existingResponse.files[0],
-        content: mergedContent
-      }]
-    };
   }
 }
