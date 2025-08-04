@@ -14,7 +14,7 @@ export interface GenerationRequest {
   image?: File;
   context?: string;
   projectType: 'single-page' | 'multi-page';
-  onProgress?: (content: string, isComplete: boolean) => void;
+  onProgress?: (content: string, isComplete: boolean, status?: string) => void;
 }
 
 export interface GenerationResponse {
@@ -108,6 +108,10 @@ export class AIService {
 
       // Validate and complete if necessary
       if (response.success && request.projectType === 'single-page') {
+        // Notify user that we're checking completeness
+        if (request.onProgress) {
+          request.onProgress(response.files[0]?.content || '', false, 'Checking website completeness...');
+        }
         response = await this.ensureCompleteGeneration(response, request, apiKey);
       }
 
@@ -185,9 +189,9 @@ export class AIService {
           throw new Error('No content generated from Gemini');
         }
 
-        // Call progress callback with complete content
+        // Call progress callback with initial content
         if (request.onProgress) {
-          request.onProgress(content, true);
+          request.onProgress(content, false, 'Initial content generated, enhancing with AI images...');
         }
 
         return await this.enhanceWithImages(content, request);
@@ -396,27 +400,29 @@ Never include any explanations, comments, or text outside the JSON. Only return 
           // Identify sections that need images
           const sections = this.identifyImageSections(enhancedContent, request.prompt);
           
-          // Generate contextual images using Clarifai
+          // Generate contextual AI images using Clarifai
           for (const section of sections) {
+            if (request.onProgress) {
+              request.onProgress(enhancedContent, false, `Generating AI image for ${section.type} section...`);
+            }
+            
             try {
               const imageUrl = await this.generateContextualImage(section.prompt, request.prompt);
               if (imageUrl) {
-                enhancedContent = enhancedContent.replace(
-                  section.placeholder,
-                  `<img src="${imageUrl}" alt="${section.alt}" class="${section.classes}" loading="lazy" />`
-                );
+                // Replace Unsplash URLs with Clarifai generated images
+                const unsplashRegex = /src="https:\/\/images\.unsplash\.com\/[^"]*"/g;
+                const matches = enhancedContent.match(unsplashRegex);
+                if (matches && matches.length > 0) {
+                  // Replace the first Unsplash image found for this section
+                  enhancedContent = enhancedContent.replace(
+                    matches[0],
+                    `src="${imageUrl}"`
+                  );
+                }
               }
             } catch (error) {
-              console.warn(`Failed to generate image for ${section.type}:`, error);
-              // Fallback to Unsplash if Clarifai fails
-              const fallbackImages = await UnsplashService.getContextualImages(request.prompt, [section.type]);
-              if (fallbackImages[section.type]?.length > 0) {
-                const image = fallbackImages[section.type][0];
-                enhancedContent = enhancedContent.replace(
-                  section.placeholder,
-                  UnsplashService.getImageMarkup(image, section.alt, section.classes)
-                );
-              }
+              console.warn(`Failed to generate AI image for ${section.type}:`, error);
+              // Keep original Unsplash images as fallback
             }
           }
           
@@ -732,7 +738,7 @@ Never include any explanations, comments, or text outside the JSON. Only return 
   }
 
   private static async ensureCompleteGeneration(response: GenerationResponse, request: GenerationRequest, apiKey: string): Promise<GenerationResponse> {
-    const maxRetries = 3;
+    const maxRetries = 5; // Increased retries
     let currentResponse = response;
     
     for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -740,10 +746,23 @@ Never include any explanations, comments, or text outside the JSON. Only return 
       
       if (validation.isComplete) {
         console.log('Content generation is complete with all required sections');
+        if (request.onProgress) {
+          request.onProgress(currentResponse.files[0]?.content || '', true, 'Website completed successfully! 🎉');
+        }
         return currentResponse;
       }
       
       console.log(`Content incomplete (attempt ${attempt + 1}/${maxRetries}). Missing sections:`, validation.missingSections);
+      
+      // Notify user about continuation
+      if (request.onProgress) {
+        const missingSectionNames = validation.missingSections.join(', ');
+        request.onProgress(
+          currentResponse.files[0]?.content || '', 
+          false, 
+          `Completing website... Adding missing sections: ${missingSectionNames} (${attempt + 1}/${maxRetries})`
+        );
+      }
       
       // Generate continuation
       const continuationRequest: GenerationRequest = {
@@ -760,22 +779,55 @@ Never include any explanations, comments, or text outside the JSON. Only return 
           
           // Update progress callback if available
           if (request.onProgress) {
-            request.onProgress(currentResponse.files[0]?.content || '', false);
+            const updatedValidation = this.validateSinglePageContent(currentResponse);
+            const completionPercentage = Math.round(((9 - updatedValidation.missingSections.length) / 9) * 100);
+            request.onProgress(
+              currentResponse.files[0]?.content || '', 
+              false,
+              `Website ${completionPercentage}% complete - Added more sections...`
+            );
           }
         } else {
           console.warn('Failed to generate continuation content');
-          break;
+          if (request.onProgress) {
+            request.onProgress(
+              currentResponse.files[0]?.content || '', 
+              false,
+              `Retry ${attempt + 1} failed, trying again...`
+            );
+          }
+          // Wait before retry
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          continue;
         }
       } catch (error) {
         console.error('Error generating continuation:', error);
-        break;
+        if (request.onProgress) {
+          request.onProgress(
+            currentResponse.files[0]?.content || '', 
+            false,
+            `Error on attempt ${attempt + 1}, retrying...`
+          );
+        }
+        // Wait before retry
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        continue;
       }
     }
     
     // Final validation and progress callback
+    const finalValidation = this.validateSinglePageContent(currentResponse);
     if (request.onProgress) {
-      const finalValidation = this.validateSinglePageContent(currentResponse);
-      request.onProgress(currentResponse.files[0]?.content || '', finalValidation.isComplete);
+      if (finalValidation.isComplete) {
+        request.onProgress(currentResponse.files[0]?.content || '', true, 'Website completed! 🎉');
+      } else {
+        const completionPercentage = Math.round(((9 - finalValidation.missingSections.length) / 9) * 100);
+        request.onProgress(
+          currentResponse.files[0]?.content || '', 
+          false, 
+          `Website ${completionPercentage}% complete. Some sections may be missing, but your site is ready to view!`
+        );
+      }
     }
     
     return currentResponse;
