@@ -91,6 +91,8 @@ export class AIService {
         throw new Error(`API key not found for ${request.model.provider}`);
       }
 
+      request.onProgress?.('🚀 Generating your complete stunning website...', false, 'Starting AI generation');
+
       let response: GenerationResponse;
       switch (request.model.provider) {
         case 'gemini':
@@ -106,15 +108,7 @@ export class AIService {
           throw new Error(`Unsupported provider: ${request.model.provider}`);
       }
 
-      // Validate and complete if necessary
-      if (response.success && request.projectType === 'single-page') {
-        // Notify user that we're checking completeness
-        if (request.onProgress) {
-          request.onProgress(response.files[0]?.content || '', false, 'Checking website completeness...');
-        }
-        response = await this.ensureCompleteGeneration(response, request, apiKey);
-      }
-
+      request.onProgress?.('✨ Website generation complete!', true, 'Generation finished');
       return response;
     } catch (error) {
       console.error('AI Generation Error:', error);
@@ -221,27 +215,33 @@ export class AIService {
     const isScreenshot = !!request.image;
     const isMultiPage = request.projectType === 'multi-page';
 
-    return `You are an EXTRAORDINARY web designer creating MIND-BLOWING, UNIQUE websites that make competitors jealous and visitors say "WOW!"
+    return `You are an ELITE web designer with a MISSION: Create the most STUNNING, BREATHTAKING website that will blow everyone away!
 
-${request.prompt}
+WEBSITE REQUEST: ${request.prompt}
 
 ${isScreenshot ? `
 SCREENSHOT ANALYSIS INSTRUCTIONS:
-- Analyze every detail: layout, colors, typography, spacing, components
-- Recreate the exact visual design but make it 10x more impressive
-- Extract all text and enhance the design with modern effects
-- Identify interactive elements and add stunning animations
+- Analyze every detail: layout, colors, typography, spacing, components  
+- Recreate the exact visual design but make it 1000% more impressive
+- Extract all text and enhance with cutting-edge modern effects
+- Identify interactive elements and add mind-blowing animations
 ` : ''}
 
-CRITICAL REQUIREMENTS:
-1. Generate ${isMultiPage ? 'MULTIPLE HTML pages with navigation between them' : 'ONE COMPLETE SINGLE-PAGE website with ALL sections RICH WITH CONTENT'}
-2. Use ONLY INLINE TAILWIND CSS - no separate CSS files
+🎯 ULTIMATE GOALS:
+- Create a website so beautiful people will share screenshots
+- Make competitors cry with jealousy at your design skills
+- Build something that looks like it cost $50,000 to create
+- Generate a complete, pixel-perfect masterpiece in ONE generation
+
+MANDATORY REQUIREMENTS:
+1. Generate ${isMultiPage ? 'MULTIPLE HTML pages with flawless navigation' : 'ONE COMPLETE STUNNING SINGLE-PAGE website with ALL sections PERFECTLY CRAFTED'}
+2. Use ONLY INLINE TAILWIND CSS - no external files needed
 3. Include Tailwind CSS CDN: <script src="https://cdn.tailwindcss.com"></script>
-4. Embed JavaScript directly in HTML using <script> tags
-5. Use relevant Unsplash images with proper URLs
-6. ${isMultiPage ? 'Each page must be complete with rich content' : 'EVERY SINGLE SECTION must be RICH with detailed content, visuals, and interactive elements - NO EMPTY OR MINIMAL SECTIONS ALLOWED!'}
-7. ENSURE VISUAL RICHNESS: Every section needs multiple elements, images, cards, animations, and substantial content
-8. NO PLACEHOLDER CONTENT: Write real, engaging content for every section
+4. Embed ALL JavaScript directly in HTML using <script> tags
+5. Use high-quality Unsplash images with perfect URLs
+6. ${isMultiPage ? 'Every page must be a work of art with rich, engaging content' : 'EVERY SINGLE SECTION must be VISUALLY STUNNING with detailed content, professional images, smooth animations, and interactive elements'}
+7. MAXIMUM VISUAL IMPACT: Multiple images, cards, gradients, shadows, animations in every section
+8. ZERO PLACEHOLDER CONTENT: Write compelling, specific copy that sounds professional and engaging
 
 OUTPUT FORMAT (MANDATORY):
 Return only valid JSON in this exact format:
@@ -741,373 +741,4 @@ Never include any explanations, comments, or text outside the JSON. Only return 
     };
   }
 
-  private static async ensureCompleteGeneration(response: GenerationResponse, request: GenerationRequest, apiKey: string): Promise<GenerationResponse> {
-    const maxRetries = 5; // Increased retries
-    let currentResponse = response;
-    
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-      const validation = this.validateSinglePageContent(currentResponse);
-      
-      if (validation.isComplete) {
-        console.log('Content generation is complete with all required sections');
-        if (request.onProgress) {
-          request.onProgress(currentResponse.files[0]?.content || '', true, 'Website completed successfully! 🎉');
-        }
-        return currentResponse;
-      }
-      
-      console.log(`Content incomplete (attempt ${attempt + 1}/${maxRetries}). Missing sections:`, validation.missingSections);
-      
-      // Notify user about continuation
-      if (request.onProgress) {
-        const missingSectionNames = validation.missingSections.join(', ');
-        request.onProgress(
-          currentResponse.files[0]?.content || '', 
-          false, 
-          `Completing website... Adding missing sections: ${missingSectionNames} (${attempt + 1}/${maxRetries})`
-        );
-      }
-      
-      // Generate continuation
-      const continuationRequest: GenerationRequest = {
-        ...request,
-        prompt: this.buildContinuationPrompt(request.prompt, validation.lastSection, validation.missingSections, currentResponse.files[0]?.content || '')
-      };
-      
-      try {
-        const continuationResponse = await this.generateWithGemini(continuationRequest, apiKey);
-        
-        if (continuationResponse.success && continuationResponse.files.length > 0) {
-          // Merge the new content with existing content
-          currentResponse = this.mergeContent(currentResponse, continuationResponse, validation.lastSection);
-          
-          // Update progress callback if available
-          if (request.onProgress) {
-            const updatedValidation = this.validateSinglePageContent(currentResponse);
-            const completionPercentage = Math.round(((9 - updatedValidation.missingSections.length) / 9) * 100);
-            request.onProgress(
-              currentResponse.files[0]?.content || '', 
-              false,
-              `Website ${completionPercentage}% complete - Added more sections...`
-            );
-          }
-        } else {
-          console.warn('Failed to generate continuation content');
-          if (request.onProgress) {
-            request.onProgress(
-              currentResponse.files[0]?.content || '', 
-              false,
-              `Retry ${attempt + 1} failed, trying again...`
-            );
-          }
-          // Wait before retry
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          continue;
-        }
-      } catch (error) {
-        console.error('Error generating continuation:', error);
-        if (request.onProgress) {
-          request.onProgress(
-            currentResponse.files[0]?.content || '', 
-            false,
-            `Error on attempt ${attempt + 1}, retrying...`
-          );
-        }
-        // Wait before retry
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        continue;
-      }
-    }
-    
-    // Final validation and progress callback
-    const finalValidation = this.validateSinglePageContent(currentResponse);
-    if (request.onProgress) {
-      if (finalValidation.isComplete) {
-        request.onProgress(currentResponse.files[0]?.content || '', true, 'Website completed! 🎉');
-      } else {
-        const completionPercentage = Math.round(((9 - finalValidation.missingSections.length) / 9) * 100);
-        request.onProgress(
-          currentResponse.files[0]?.content || '', 
-          false, 
-          `Website ${completionPercentage}% complete. Some sections may be missing, but your site is ready to view!`
-        );
-      }
-    }
-    
-    return currentResponse;
-  }
-
-  private static validateSinglePageContent(response: GenerationResponse): { isComplete: boolean; missingSections: string[]; lastSection: string } {
-    if (!response.success || response.files.length === 0) {
-      return { isComplete: false, missingSections: ['all'], lastSection: 'none' };
-    }
-    
-    const htmlContent = response.files[0].content;
-    
-    // Required sections for single-page websites
-    const requiredSections = [
-      { id: 'header', patterns: ['<header', 'id="header"', 'class=".*header'] },
-      { id: 'hero', patterns: ['id="hero"', 'hero', 'class=".*hero'] },
-      { id: 'about', patterns: ['id="about"', 'about', 'class=".*about'] },
-      { id: 'services', patterns: ['id="services"', 'id="features"', 'services', 'features'] },
-      { id: 'testimonials', patterns: ['id="testimonials"', 'testimonial', 'class=".*testimonial'] },
-      { id: 'portfolio', patterns: ['id="portfolio"', 'id="gallery"', 'portfolio', 'gallery', 'class=".*portfolio', 'class=".*gallery'] },
-      { id: 'stats', patterns: ['id="stats"', 'id="achievements"', 'stats', 'achievements', 'counter'] },
-      { id: 'contact', patterns: ['id="contact"', 'contact', 'class=".*contact'] },
-      { id: 'footer', patterns: ['<footer', 'id="footer"', 'class=".*footer'] }
-    ];
-    
-    const missingSections: string[] = [];
-    let lastFoundSection = 'header';
-    
-    for (const section of requiredSections) {
-      const hasSection = section.patterns.some(pattern => {
-        const regex = new RegExp(pattern, 'i');
-        return regex.test(htmlContent);
-      });
-      
-      if (hasSection) {
-        lastFoundSection = section.id;
-      } else {
-        missingSections.push(section.id);
-      }
-    }
-    
-    // Check if HTML is properly closed
-    const hasClosingHtml = /<\/html>/i.test(htmlContent);
-    const hasClosingBody = /<\/body>/i.test(htmlContent);
-    
-    const isComplete = missingSections.length === 0 && hasClosingHtml && hasClosingBody;
-    
-    return {
-      isComplete,
-      missingSections,
-      lastSection: lastFoundSection
-    };
-  }
-
-  private static buildContinuationPrompt(originalPrompt: string, lastSection: string, missingSections: string[], existingContent: string): string {
-    const sectionMap: Record<string, string> = {
-      'testimonials': 'TESTIMONIALS/REVIEWS SECTION',
-      'portfolio': 'PORTFOLIO/GALLERY SECTION', 
-      'stats': 'STATS/ACHIEVEMENTS SECTION',
-      'contact': 'CONTACT SECTION',
-      'footer': 'FOOTER'
-    };
-    
-    const nextSections = missingSections.map(section => sectionMap[section] || section.toUpperCase()).join(', ');
-    
-    // Find where the content cuts off to determine continuation point
-    const lastLines = this.findLastCompleteContent(existingContent);
-    const cutoffPoint = lastLines.cutoffText;
-    const isIncompleteHTML = lastLines.isIncomplete;
-    
-    return `CRITICAL: CONTINUE the incomplete website from the EXACT point where it was cut off.
-
-ORIGINAL REQUEST: ${originalPrompt}
-
-EXISTING CONTENT ANALYSIS:
-- Last section completed: ${lastSection.toUpperCase()}
-- Content cuts off at: "${cutoffPoint}"
-- Content is incomplete: ${isIncompleteHTML ? 'YES' : 'NO'}
-- Missing sections: ${nextSections}
-
-${isIncompleteHTML ? `
-CONTINUATION INSTRUCTIONS:
-1. Start from the EXACT line where content was cut off: "${cutoffPoint}"
-2. Complete the incomplete element/section first, then add missing sections
-3. Do NOT create new headers, do NOT duplicate existing content
-4. Continue with the same HTML structure and design patterns
-` : `
-NEW SECTIONS INSTRUCTIONS:
-1. Add the missing sections starting after the last complete section
-2. Maintain the same design style and class patterns
-3. Do NOT duplicate any existing content
-`}
-
-CRITICAL OUTPUT REQUIREMENTS:
-1. Return ONLY the continuation HTML - starting from where it cut off
-2. Use consistent Tailwind CSS classes matching existing content
-3. Complete ALL missing sections: ${nextSections}
-4. End with proper closing tags if this is the final completion
-
-OUTPUT FORMAT (MANDATORY):
-Return only valid JSON in this exact format:
-{
-  "files": [
-    {
-      "path": "index.html",
-      "content": "CONTINUATION HTML ONLY - start exactly where previous content ended"
-    }
-  ]
-}
-
-CONTINUE WITH THESE SECTIONS IN ORDER:
-${missingSections.includes('testimonials') ? `
-5. TESTIMONIALS/REVIEWS SECTION (Social proof):
-   - Customer testimonials with photos
-   - Star ratings and quotes
-   - Multiple testimonials in grid or carousel
-` : ''}
-
-${missingSections.includes('portfolio') ? `
-6. PORTFOLIO/GALLERY SECTION (Showcase work):
-   - Gallery of work/products/achievements
-   - Image grid with hover effects
-   - Case studies or examples
-` : ''}
-
-${missingSections.includes('stats') ? `
-7. STATS/ACHIEVEMENTS SECTION (Credibility):
-   - Animated counter numbers
-   - Key metrics and achievements
-   - Visual progress indicators
-` : ''}
-
-${missingSections.includes('contact') ? `
-8. CONTACT SECTION (Lead generation):
-   - Contact form with validation
-   - Contact information and details
-   - Map or location info
-   - Social media links
-` : ''}
-
-${missingSections.includes('footer') ? `
-9. FOOTER (Complete site links):
-   - Company information
-   - Quick navigation links
-   - Legal pages links
-   - Copyright and social media
-
-    </main>
-
-    <!-- JavaScript for interactivity -->
-    <script>
-        // Add necessary JavaScript for animations, form handling, mobile menu, etc.
-    </script>
-
-</body>
-</html>
-` : ''}
-
-Generate STUNNING, UNIQUE designs that make competitors jealous. Use advanced Tailwind CSS techniques and beautiful animations.
-
-Never include any explanations, comments, or text outside the JSON. Only return the valid JSON with the HTML content for the missing sections.`;
-  }
-
-  private static findLastCompleteContent(content: string): { cutoffText: string; isIncomplete: boolean } {
-    // Remove HTML closing tags to find the actual content cutoff
-    const withoutClosingTags = content.replace(/<\/(?:main|body|html)>[\s\S]*$/i, '').trim();
-    
-    // Get the last 200 characters to analyze
-    const lastChunk = withoutClosingTags.slice(-200);
-    const lines = withoutClosingTags.split('\n');
-    const lastLine = lines[lines.length - 1]?.trim() || '';
-    
-    // Check if content appears to be cut off mid-sentence, mid-tag, or incomplete
-    const isIncomplete = 
-      !lastLine.endsWith('>') ||          // Tag not closed
-      lastLine.includes('class="') ||     // Incomplete class attribute
-      lastLine.includes('src="') ||       // Incomplete src attribute
-      !!lastLine.match(/<[^>]*$/) ||      // Open tag not closed
-      lastLine.includes('span-') ||       // Grid span potentially incomplete
-      lastChunk.includes('col-span-') ||  // Grid layout potentially incomplete
-      !withoutClosingTags.includes('</div>'); // Missing closing divs
-    
-    return {
-      cutoffText: lastLine.substring(0, 50) + (lastLine.length > 50 ? '...' : ''),
-      isIncomplete
-    };
-  }
-
-  private static mergeContent(existingResponse: GenerationResponse, continuationResponse: GenerationResponse, lastSection: string): GenerationResponse {
-    if (!existingResponse.files[0] || !continuationResponse.files[0]) {
-      return existingResponse;
-    }
-    
-    let existingContent = existingResponse.files[0].content;
-    const continuationContent = continuationResponse.files[0].content;
-    
-    // Remove any complete HTML document structure from continuation
-    let cleanContinuation = continuationContent
-      .replace(/<!DOCTYPE[^>]*>/i, '')
-      .replace(/<html[^>]*>/i, '')
-      .replace(/<head[^>]*>[\s\S]*?<\/head>/i, '')
-      .replace(/<body[^>]*>/i, '')
-      .trim();
-    
-    // Remove opening <main> tag if present in continuation
-    cleanContinuation = cleanContinuation.replace(/^<main[^>]*>/i, '').trim();
-    
-    // Check if existing content is incomplete (cuts off mid-element)
-    const lastContentInfo = this.findLastCompleteContent(existingContent);
-    
-    if (lastContentInfo.isIncomplete) {
-      // Find where the incomplete content starts
-      const withoutClosingTags = existingContent.replace(/<\/(?:main|body|html)>[\s\S]*$/i, '');
-      const lines = withoutClosingTags.split('\n');
-      
-      // Find the last complete line (where we should start continuation)
-      let lastCompleteLineIndex = lines.length - 1;
-      while (lastCompleteLineIndex > 0) {
-        const line = lines[lastCompleteLineIndex].trim();
-        if (line.endsWith('>') && !line.includes('span-') && !line.includes('class="')) {
-          break;
-        }
-        lastCompleteLineIndex--;
-      }
-      
-      // Reconstruct content up to the last complete line
-      const completeLines = lines.slice(0, lastCompleteLineIndex + 1);
-      const baseContent = completeLines.join('\n');
-      
-      // Find closing tags from original content
-      const closingTagsMatch = existingContent.match(/<\/(?:main|body|html)>[\s\S]*$/i);
-      const closingTags = closingTagsMatch ? closingTagsMatch[0] : '\n    </main>\n\n</body>\n</html>';
-      
-      // Merge: base content + clean continuation + closing tags
-      const mergedContent = baseContent + '\n\n' + cleanContinuation + '\n' + closingTags;
-      
-      return {
-        ...existingResponse,
-        files: [{
-          ...existingResponse.files[0],
-          content: mergedContent
-        }]
-      };
-    } else {
-      // Content is complete, just find insertion point for new sections
-      const insertionPatterns = [
-        /<\/main>/i,
-        /<\/body>/i,
-        /<\/html>/i
-      ];
-      
-      let insertionPoint = -1;
-      for (const pattern of insertionPatterns) {
-        insertionPoint = existingContent.search(pattern);
-        if (insertionPoint !== -1) {
-          break;
-        }
-      }
-      
-      if (insertionPoint === -1) {
-        insertionPoint = existingContent.length;
-      }
-      
-      // Insert the continuation content
-      const beforeInsertion = existingContent.substring(0, insertionPoint);
-      const afterInsertion = existingContent.substring(insertionPoint);
-      
-      const mergedContent = beforeInsertion + '\n\n' + cleanContinuation + '\n' + afterInsertion;
-      
-      return {
-        ...existingResponse,
-        files: [{
-          ...existingResponse.files[0],
-          content: mergedContent
-        }]
-      };
-    }
-  }
 }
