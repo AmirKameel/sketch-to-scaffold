@@ -33,21 +33,21 @@ export const AI_MODELS: AIModel[] = [
     id: 'gemini-2.5-pro',
     name: 'Gemini 2.5 Pro',
     provider: 'gemini',
-    maxTokens: 8192,
+    maxTokens: 12000,
     supportsVision: true
   },
   {
     id: 'gemini-2.0-flash-exp',
     name: 'Gemini 2.0 Flash (Experimental)',
     provider: 'gemini',
-    maxTokens: 8192,
+    maxTokens: 12000,
     supportsVision: true
   },
   {
     id: 'gemini-1.5-pro',
     name: 'Gemini 1.5 Pro',
     provider: 'gemini',
-    maxTokens: 8192,
+    maxTokens: 12000,
     supportsVision: true
   },
   {
@@ -139,7 +139,7 @@ export class AIService {
         temperature: 0.7,
         topK: 40,
         topP: 0.95,
-        maxOutputTokens: 8192, // Use maximum tokens for complete generation
+        maxOutputTokens: 12000, // Increased to 12k for complete rich content generation
       }
     };
 
@@ -234,12 +234,14 @@ SCREENSHOT ANALYSIS INSTRUCTIONS:
 ` : ''}
 
 CRITICAL REQUIREMENTS:
-1. Generate ${isMultiPage ? 'MULTIPLE HTML pages with navigation between them' : 'ONE COMPLETE SINGLE-PAGE website with ALL sections'}
+1. Generate ${isMultiPage ? 'MULTIPLE HTML pages with navigation between them' : 'ONE COMPLETE SINGLE-PAGE website with ALL sections RICH WITH CONTENT'}
 2. Use ONLY INLINE TAILWIND CSS - no separate CSS files
 3. Include Tailwind CSS CDN: <script src="https://cdn.tailwindcss.com"></script>
 4. Embed JavaScript directly in HTML using <script> tags
 5. Use relevant Unsplash images with proper URLs
-6. ${isMultiPage ? 'Each page must be complete' : 'The single page MUST include ALL sections - do not cut off early!'}
+6. ${isMultiPage ? 'Each page must be complete with rich content' : 'EVERY SINGLE SECTION must be RICH with detailed content, visuals, and interactive elements - NO EMPTY OR MINIMAL SECTIONS ALLOWED!'}
+7. ENSURE VISUAL RICHNESS: Every section needs multiple elements, images, cards, animations, and substantial content
+8. NO PLACEHOLDER CONTENT: Write real, engaging content for every section
 
 OUTPUT FORMAT (MANDATORY):
 Return only valid JSON in this exact format:
@@ -374,12 +376,14 @@ TAILWIND CSS REQUIREMENTS:
 - Use proper color palettes and semantic naming
 
 GENERATION RULES:
-- Generate the COMPLETE page in one response
-- If approaching token limits, prioritize essential content but include ALL sections
-- Use concise but impactful copy
-- Focus on visual impact over verbose descriptions
+- Generate the COMPLETE page with ALL sections FULLY DEVELOPED in one response
+- With 12k tokens available, create RICH, DETAILED content for every section
+- Every section must have multiple visual elements, cards, images, and substantial text content
+- Use engaging, specific copy - not generic placeholder text
+- Include multiple testimonials, features, portfolio items, stats, etc.
 - Ensure proper HTML structure with DOCTYPE, head, and body tags
 - Include proper meta tags for SEO
+- Make every section visually stunning with multiple interactive elements
 
 Never include any explanations, comments, or text outside the JSON. Only return the valid JSON with the HTML files containing inline Tailwind CSS and embedded JavaScript.`;
   }
